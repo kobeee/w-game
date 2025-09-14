@@ -1,0 +1,17 @@
+{
+  "output": "/mnt/data/src/cocos/assets/words/words_core.json",
+  "counts": {
+    "total_words": 1455,
+    "by_len": {
+      "5": 473,
+      "4": 214,
+      "6": 710,
+      "3": 58
+    }
+  },
+  "params": {
+    "length_range": "3-6",
+    "seed_base": 503,
+    "variants_added": 952
+  }
+}
