@@ -1,0 +1,299 @@
+import { _decorator, Component, Node, director, sys } from 'cc';
+import { GlossService } from '../data/GlossService';
+import { WordBank } from '../data/WordBank';
+import { GameBoard } from '../ui/GameBoard';
+import { HUD } from '../ui/HUD';
+import { GlossSheet } from '../ui/GlossSheet';
+import { AudioMgr } from '../util/AudioMgr';
+
+
+const { ccclass, property } = _decorator;
+
+@ccclass('GameApp')
+export class GameApp extends Component {
+    @property(GameBoard)
+    board: GameBoard = null!;
+
+    @property(HUD)
+    hud: HUD = null!;
+
+    @property(GlossSheet)
+    glossSheet: GlossSheet = null!;
+
+    // 游戏服务
+    private glossService: GlossService = new GlossService();
+    private wordBank: WordBank = new WordBank();
+    private audioMgr: AudioMgr = new AudioMgr();
+
+    // 游戏状态
+    private currentTargetWord: string = '';
+    private gameTimer: number = 0;
+    private gameTime: number = 60; // 60秒游戏时间
+    private isGameRunning: boolean = false;
+    private roundsCompleted: number = 0;
+
+    protected async onLoad(): Promise<void> {
+        console.log('[GameApp] 游戏开始初始化');
+        
+        await this.initializeGame();
+        this.setupEventListeners();
+        this.setupComponents();
+        
+        // 开始游戏
+        this.startGame();
+    }
+
+    /**
+     * 手动提交当前选择的单词
+     */
+    submit(): void {
+        if (!this.isGameRunning) {
+            console.warn('[GameApp] 游戏未运行，无法提交');
+            return;
+        }
+
+        const currentString = this.board.getCurrentString();
+        console.log('[GameApp] 提交单词:', currentString, '目标:', this.currentTargetWord);
+
+        if (currentString === this.currentTargetWord) {
+            this.onCorrectAnswer();
+        } else {
+            this.onWrongAnswer();
+        }
+    }
+
+    private async initializeGame(): Promise<void> {
+        try {
+            // 检查是否使用完整词库
+            const useFull = sys.localStorage.getItem('use_full_dictionary') === 'true';
+            console.log('[GameApp] 使用完整词库:', useFull);
+
+            // 加载词库
+            await this.glossService.load(useFull);
+            
+            // 初始化单词银行
+            const wordBankData = this.glossService.getWordBankData();
+            if (wordBankData) {
+                this.wordBank.init(wordBankData);
+                console.log('[GameApp] 词库初始化成功');
+            } else {
+                console.error('[GameApp] 词库数据为空');
+            }
+
+            // 初始化音频管理器
+            this.audioMgr.init();
+            
+        } catch (error) {
+            console.error('[GameApp] 初始化失败:', error);
+        }
+    }
+
+    private setupEventListeners(): void {
+        if (this.board) {
+            this.board.node.on('board:change', this.onBoardChange, this);
+        }
+    }
+
+    private setupComponents(): void {
+        // 绑定HUD和GlossSheet
+        if (this.hud && this.glossSheet) {
+            this.hud.bindGlossSheet(this.glossSheet);
+        }
+
+        // 设置GlossSheet的收藏回调
+        if (this.glossSheet) {
+            this.glossSheet.setStarCallback((word: string) => {
+                this.glossService.star(word);
+                console.log('[GameApp] 单词已收藏:', word);
+            });
+        }
+    }
+
+    private startGame(): void {
+        console.log('[GameApp] 游戏开始');
+        
+        this.isGameRunning = true;
+        this.roundsCompleted = 0;
+        
+        // 重置HUD
+        if (this.hud) {
+            this.hud.reset();
+        }
+
+        // 开始计时器
+        this.startTimer();
+        
+        // 开始第一轮
+        this.nextRound();
+    }
+
+    private startTimer(): void {
+        this.gameTime = 60;
+        
+        this.gameTimer = setInterval(() => {
+            this.gameTime--;
+            
+            if (this.hud) {
+                this.hud.updateTimer(this.gameTime);
+                
+                // 时间不足警告
+                if (this.gameTime <= 10 && this.gameTime % 2 === 0) {
+                    this.hud.playTimeWarning();
+                }
+            }
+            
+            if (this.gameTime <= 0) {
+                this.endGame();
+            }
+        }, 1000);
+    }
+
+    private nextRound(): void {
+        if (!this.isGameRunning) return;
+
+        // 随机选择4-6字母的单词
+        const targetLength = 4 + Math.floor(Math.random() * 3); // 4, 5, 或 6
+        this.currentTargetWord = this.wordBank.pick(targetLength);
+        
+        if (!this.currentTargetWord) {
+            console.error('[GameApp] 无法获取目标单词，长度:', targetLength);
+            // 尝试其他长度
+            for (let len = 4; len <= 6; len++) {
+                this.currentTargetWord = this.wordBank.pick(len);
+                if (this.currentTargetWord) break;
+            }
+        }
+
+        if (!this.currentTargetWord) {
+            console.error('[GameApp] 无法获取任何目标单词，游戏无法继续');
+            return;
+        }
+
+        console.log('[GameApp] 新回合开始，目标单词:', this.currentTargetWord);
+        
+        // 更新HUD显示目标词
+        if (this.hud) {
+            this.hud.setTargetWord(this.currentTargetWord);
+        }
+        
+        // 生成网格
+        if (this.board) {
+            this.board.spawnGrid(this.currentTargetWord);
+        }
+    }
+
+    private onBoardChange(currentString: string): void {
+        console.log('[GameApp] 棋盘选择变化:', currentString);
+        
+        // 可以在这里添加实时反馈逻辑
+        // 比如当字符串长度达到目标时自动提交
+        if (currentString.length === this.currentTargetWord.length) {
+            // 短暂延迟后自动检查
+            this.scheduleFunction(() => {
+                const finalString = this.board.getCurrentString();
+                if (finalString === this.currentTargetWord) {
+                    this.onCorrectAnswer();
+                } else {
+                    this.onWrongAnswer();
+                }
+            }, 0.3);
+        }
+    }
+
+    private onCorrectAnswer(): void {
+        console.log('[GameApp] 回答正确!');
+        
+        // 播放正确音效
+        this.audioMgr.playCorrect();
+        
+        // 显示正确状态
+        if (this.board) {
+            this.board.showCorrectAnswer();
+        }
+        
+        // 更新分数
+        if (this.hud) {
+            this.hud.addScore(10);
+        }
+        
+        // 获取词义并显示
+        const zh = this.glossService.explain(this.currentTargetWord);
+        
+        // 将单词添加到生词本
+        this.glossService.star(this.currentTargetWord);
+        
+        // 记录到HUD以供信息按钮使用
+        if (this.hud) {
+            this.hud.recordLastGloss(this.currentTargetWord, zh);
+        }
+        
+        // 显示词义卡片（自动1.2秒后隐藏）
+        if (this.glossSheet) {
+            this.glossSheet.show(this.currentTargetWord, zh, 1200);
+        }
+        
+        this.roundsCompleted++;
+        
+        // 延迟后进入下一轮
+        this.scheduleFunction(() => {
+            this.nextRound();
+        }, 1.5);
+    }
+
+    private onWrongAnswer(): void {
+        console.log('[GameApp] 回答错误');
+        
+        // 播放错误音效
+        this.audioMgr.playWrong();
+        
+        // 显示错误状态
+        if (this.board) {
+            this.board.showWrongAnswer();
+        }
+        
+        // 短暂延迟后清空选择
+        this.scheduleFunction(() => {
+            if (this.board) {
+                this.board.resetAllTiles();
+            }
+        }, 0.5);
+    }
+
+    private endGame(): void {
+        console.log('[GameApp] 游戏结束');
+        
+        this.isGameRunning = false;
+        
+        // 清理计时器
+        if (this.gameTimer > 0) {
+            clearInterval(this.gameTimer);
+            this.gameTimer = 0;
+        }
+        
+        // 保存本局生词本（GlossService内部已处理）
+        console.log('[GameApp] 本局完成回合数:', this.roundsCompleted);
+        console.log('[GameApp] 最终分数:', this.hud?.getCurrentScore() || 0);
+        
+        // 跳转到结果页面
+        director.loadScene('Result');
+    }
+
+    private scheduleFunction(callback: () => void, delay: number): void {
+        setTimeout(callback, delay * 1000);
+    }
+
+    protected onDestroy(): void {
+        // 清理计时器
+        if (this.gameTimer > 0) {
+            clearInterval(this.gameTimer);
+            this.gameTimer = 0;
+        }
+        
+        // 清理事件监听
+        if (this.board) {
+            this.board.node.off('board:change', this.onBoardChange, this);
+        }
+        
+        console.log('[GameApp] 组件销毁');
+    }
+}
