@@ -317,7 +317,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "d3935ce3-5fa5-4d86-86f0-ba938e765c4d@f9941",
+      "__uuid__": "ae9a5874-9a05-48d4-8718-820a1ec0f091@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -360,7 +360,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": 541.8,
+      "y": 539.8,
       "z": 0
     },
     "_lrot": {
@@ -398,8 +398,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 160,
-      "height": 50.4
+      "width": 164,
+      "height": 54.4
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -423,9 +423,9 @@
     "_dstBlendFactor": 4,
     "_color": {
       "__type__": "cc.Color",
-      "r": 0,
-      "g": 0,
-      "b": 0,
+      "r": 255,
+      "g": 255,
+      "b": 255,
       "a": 255
     },
     "_string": "游戏结果",
@@ -441,16 +441,16 @@
     "_isSystemFontUsed": true,
     "_spacingX": 0,
     "_isItalic": false,
-    "_isBold": false,
+    "_isBold": true,
     "_isUnderline": false,
     "_underlineHeight": 2,
     "_cacheMode": 0,
-    "_enableOutline": false,
+    "_enableOutline": true,
     "_outlineColor": {
       "__type__": "cc.Color",
-      "r": 0,
-      "g": 0,
-      "b": 0,
+      "r": 14,
+      "g": 165,
+      "b": 69,
       "a": 255
     },
     "_outlineWidth": 2,
@@ -525,7 +525,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": 441.8,
+      "y": 439.8,
       "z": 0
     },
     "_lrot": {
@@ -563,8 +563,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 170.68359375,
-      "height": 50.4
+      "width": 176.0078125,
+      "height": 54.4
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -588,9 +588,9 @@
     "_dstBlendFactor": 4,
     "_color": {
       "__type__": "cc.Color",
-      "r": 81,
-      "g": 86,
-      "b": 87,
+      "r": 255,
+      "g": 255,
+      "b": 255,
       "a": 255
     },
     "_string": "本局单词总数: 0",
@@ -606,11 +606,11 @@
     "_isSystemFontUsed": true,
     "_spacingX": 0,
     "_isItalic": false,
-    "_isBold": false,
+    "_isBold": true,
     "_isUnderline": false,
     "_underlineHeight": 2,
     "_cacheMode": 0,
-    "_enableOutline": false,
+    "_enableOutline": true,
     "_outlineColor": {
       "__type__": "cc.Color",
       "r": 0,
@@ -757,7 +757,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 350,
+      "x": 225,
       "y": 0,
       "z": 0
     },
@@ -906,7 +906,7 @@
     "_contentSize": {
       "__type__": "cc.Size",
       "width": 12,
-      "height": 600
+      "height": 400
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -968,8 +968,8 @@
     "_target": null,
     "_left": 0,
     "_right": 0,
-    "_top": 0,
-    "_bottom": 0,
+    "_top": 25,
+    "_bottom": 25,
     "_horizontalCenter": 0,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
@@ -1151,13 +1151,13 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 600,
-      "height": 400
+      "width": 450,
+      "height": 277
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
       "x": 0.5,
-      "y": 0.5
+      "y": 0.75
     },
     "_id": "1fkRQF7ARAJbp/ofk1CDjy"
   },
@@ -1239,7 +1239,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": 190,
+      "y": 64.25,
       "z": 0
     },
     "_lrot": {
@@ -1361,13 +1361,13 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 600,
-      "height": 400
+      "width": 450,
+      "height": 277
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
       "x": 0.5,
-      "y": 0.5
+      "y": 0.75
     },
     "_id": "c3O62U9nNEG6l4lqAeqAdb"
   },
@@ -1391,8 +1391,8 @@
     "_startAxis": 0,
     "_paddingLeft": 0,
     "_paddingRight": 0,
-    "_paddingTop": 10,
-    "_paddingBottom": 10,
+    "_paddingTop": 5,
+    "_paddingBottom": 5,
     "_spacingX": 0,
     "_spacingY": 5,
     "_verticalDirection": 1,
@@ -1415,8 +1415,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 700,
-      "height": 600
+      "width": 450,
+      "height": 450
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -1445,10 +1445,7 @@
       "b": 255,
       "a": 255
     },
-    "_spriteFrame": {
-      "__uuid__": "b730527c-3233-41c2-aaf7-7cdab58f9749@f9941",
-      "__expectedType__": "cc.SpriteFrame"
-    },
+    "_spriteFrame": null,
     "_type": 1,
     "_fillType": 0,
     "_sizeMode": 0,
@@ -1526,7 +1523,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": -175,
-      "y": -537,
+      "y": -437,
       "z": 0
     },
     "_lrot": {
@@ -1637,9 +1634,9 @@
     "_dstBlendFactor": 4,
     "_color": {
       "__type__": "cc.Color",
-      "r": 255,
-      "g": 107,
-      "b": 107,
+      "r": 245,
+      "g": 80,
+      "b": 80,
       "a": 255
     },
     "_string": "清空生词本",
@@ -1655,16 +1652,16 @@
     "_isSystemFontUsed": true,
     "_spacingX": 0,
     "_isItalic": false,
-    "_isBold": false,
+    "_isBold": true,
     "_isUnderline": false,
     "_underlineHeight": 2,
     "_cacheMode": 0,
     "_enableOutline": true,
     "_outlineColor": {
       "__type__": "cc.Color",
-      "r": 73,
-      "g": 68,
-      "b": 68,
+      "r": 255,
+      "g": 255,
+      "b": 255,
       "a": 255
     },
     "_outlineWidth": 2,
@@ -1824,7 +1821,7 @@
     "_left": 100,
     "_right": 0,
     "_top": 0,
-    "_bottom": 100,
+    "_bottom": 200,
     "_horizontalCenter": 0,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
@@ -1871,7 +1868,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 175,
-      "y": -537,
+      "y": -437,
       "z": 0
     },
     "_lrot": {
@@ -1982,9 +1979,9 @@
     "_dstBlendFactor": 4,
     "_color": {
       "__type__": "cc.Color",
-      "r": 78,
-      "g": 205,
-      "b": 196,
+      "r": 103,
+      "g": 245,
+      "b": 103,
       "a": 255
     },
     "_string": "返回主菜单",
@@ -2169,7 +2166,7 @@
     "_left": 0,
     "_right": 100,
     "_top": 0,
-    "_bottom": 100,
+    "_bottom": 200,
     "_horizontalCenter": 0,
     "_verticalCenter": 0,
     "_isAbsLeft": true,

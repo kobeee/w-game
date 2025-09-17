@@ -130,7 +130,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 680,
+      "width": 450,
       "height": 80
     },
     "_anchorPoint": {
@@ -222,7 +222,7 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -280,
+      "x": -220,
       "y": -20,
       "z": 0
     },
@@ -294,16 +294,16 @@
     "_dstBlendFactor": 4,
     "_color": {
       "__type__": "cc.Color",
-      "r": 18,
-      "g": 160,
-      "b": 240,
+      "r": 255,
+      "g": 255,
+      "b": 255,
       "a": 255
     },
     "_string": "字符串：WORD",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 28,
-    "_fontSize": 28,
+    "_actualFontSize": 30,
+    "_fontSize": 30,
     "_fontFamily": "Arial",
     "_lineHeight": 30,
     "_overflow": 1,
@@ -319,9 +319,9 @@
     "_enableOutline": true,
     "_outlineColor": {
       "__type__": "cc.Color",
-      "r": 10,
-      "g": 75,
-      "b": 83,
+      "r": 32,
+      "g": 152,
+      "b": 219,
       "a": 255
     },
     "_outlineWidth": 2,
@@ -381,7 +381,7 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -80,
+      "x": 20,
       "y": -20,
       "z": 0
     },
@@ -422,7 +422,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 300,
+      "width": 150,
       "height": 40
     },
     "_anchorPoint": {
@@ -453,16 +453,16 @@
     "_dstBlendFactor": 4,
     "_color": {
       "__type__": "cc.Color",
-      "r": 70,
-      "g": 65,
-      "b": 65,
+      "r": 37,
+      "g": 150,
+      "b": 160,
       "a": 255
     },
     "_string": "中文释义",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 20,
-    "_fontSize": 20,
+    "_actualFontSize": 24,
+    "_fontSize": 24,
     "_fontFamily": "Arial",
     "_lineHeight": 22,
     "_overflow": 1,
@@ -471,7 +471,7 @@
     "_isSystemFontUsed": true,
     "_spacingX": 0,
     "_isItalic": true,
-    "_isBold": false,
+    "_isBold": true,
     "_isUnderline": false,
     "_underlineHeight": 2,
     "_cacheMode": 0,
@@ -531,7 +531,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 680,
+      "width": 450,
       "height": 80
     },
     "_anchorPoint": {
