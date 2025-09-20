@@ -1,5 +1,6 @@
-import { _decorator, Component, Node, Button, Toggle, director, sys, Sprite, assetManager, SpriteFrame } from 'cc';
-// 使用assetManager.loadBundle动态加载远程Asset Bundle资源
+import { _decorator, Component, Node, Button, Toggle, director, sys, Sprite } from 'cc';
+import { AssetLoader } from '../core/AssetLoader';
+// 使用统一AssetLoader，完全利用Cocos Creator 3.8.7缓存机制
 
 const { ccclass, property } = _decorator;
 
@@ -196,16 +197,23 @@ export class MainMenu extends Component {
     }
 
     /**
-     * 动态加载远程Asset Bundle资源
+     * 加载远程Asset Bundle资源（使用统一AssetLoader，充分利用缓存）
      */
     private async loadRemoteAssets(): Promise<void> {
         try {
+            console.log('[MainMenu] 开始加载远程资源...');
+            const assetLoader = AssetLoader.getInstance();
+            
+            // 显示缓存统计信息
+            const cacheStats = assetLoader.getCacheStats();
+            console.log(`[MainMenu] 当前缓存统计: ${cacheStats.bundleCount}个Bundle (${cacheStats.bundleNames.join(', ')})`);
+            
             // 并行加载背景和标题资源
             await Promise.all([
-                // 加载背景Bundle - 必须指定到spriteFrame子资源
-                this.loadRemoteBundle('bg', 'main_scene_bg/spriteFrame', this.backgroundSprite),
-                // 加载标题Bundle - 必须指定到spriteFrame子资源
-                this.loadRemoteBundle('title', 'title/spriteFrame', this.titleSprite)
+                // 加载背景资源 - 自动利用预加载缓存
+                this.loadSpriteFromBundle('bg', 'main_scene_bg/spriteFrame', this.backgroundSprite),
+                // 加载标题资源 - 自动利用预加载缓存
+                this.loadSpriteFromBundle('title', 'title/spriteFrame', this.titleSprite)
             ]);
             console.log('[MainMenu] 远程资源加载完成');
         } catch (error) {
@@ -215,31 +223,34 @@ export class MainMenu extends Component {
     }
 
     /**
-     * 加载指定Bundle中的SpriteFrame资源
+     * 使用统一AssetLoader加载Sprite资源
      */
-    private loadRemoteBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
-        return new Promise((resolve, reject) => {
-            assetManager.loadBundle(bundleName, (err, bundle) => {
-                if (err) {
-                    console.error(`[MainMenu] Bundle '${bundleName}' 加载失败:`, err);
-                    reject(err);
-                    return;
-                }
-
-                bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
-                    if (err) {
-                        console.error(`[MainMenu] SpriteFrame '${assetPath}' 加载失败:`, err);
-                        reject(err);
-                        return;
-                    }
-
-                    if (sprite) {
-                        sprite.spriteFrame = spriteFrame;
-                        console.log(`[MainMenu] 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
-                    }
-                    resolve();
-                });
-            });
-        });
+    private async loadSpriteFromBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
+        try {
+            const assetLoader = AssetLoader.getInstance();
+            
+            // 检查缓存状态
+            const bundleCached = assetLoader.isBundleCached(bundleName);
+            const assetCached = assetLoader.isAssetCached(bundleName, assetPath);
+            
+            console.log(`[MainMenu] 加载${bundleName}/${assetPath} - Bundle缓存:${bundleCached}, 资源完全加载:${assetCached}`);
+            
+            if (assetCached) {
+                console.log(`[MainMenu] 🚀 资源立即可用，无需等待加载`);
+            } else {
+                console.log(`[MainMenu] ⏳ 资源需要完全加载，可能有延迟`);
+            }
+            
+            // 使用统一加载器加载资源
+            const spriteFrame = await assetLoader.loadSpriteFrame(bundleName, assetPath);
+            
+            if (sprite) {
+                sprite.spriteFrame = spriteFrame;
+                console.log(`[MainMenu] ✅ 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
+            }
+        } catch (error) {
+            console.error(`[MainMenu] 加载Sprite失败: ${bundleName}/${assetPath}`, error);
+            throw error;
+        }
     }
 }

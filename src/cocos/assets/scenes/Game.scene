@@ -949,7 +949,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": -50,
+      "y": 0,
       "z": 0
     },
     "_lrot": {
@@ -987,8 +987,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 360,
-      "height": 360
+      "width": 420,
+      "height": 420
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -1014,7 +1014,7 @@
     "_top": 0,
     "_bottom": 0,
     "_horizontalCenter": 0,
-    "_verticalCenter": -50,
+    "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
     "_isAbsTop": true,
@@ -1045,16 +1045,16 @@
       "height": 40
     },
     "_startAxis": 0,
-    "_paddingLeft": 10,
-    "_paddingRight": 10,
-    "_paddingTop": 10,
-    "_paddingBottom": 10,
-    "_spacingX": 5,
-    "_spacingY": 5,
+    "_paddingLeft": 2,
+    "_paddingRight": 2,
+    "_paddingTop": 2,
+    "_paddingBottom": 2,
+    "_spacingX": 2,
+    "_spacingY": 2,
     "_verticalDirection": 1,
     "_horizontalDirection": 0,
     "_constraint": 2,
-    "_constraintNum": 4,
+    "_constraintNum": 5,
     "_affectedByScale": false,
     "_isAlign": false,
     "_id": "40CvC4S0ZKe40zs6eN+ckM"
@@ -1069,8 +1069,8 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "rows": 4,
-    "cols": 4,
+    "rows": 5,
+    "cols": 5,
     "tilePrefab": {
       "__uuid__": "2772a1ed-a5b2-4e83-b487-2330d72b60a8",
       "__expectedType__": "cc.Prefab"

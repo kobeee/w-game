@@ -1,4 +1,5 @@
-import { _decorator, Component, Label, Sprite, SpriteFrame, resources, Color, Node, EventTouch, Button } from 'cc';
+import { _decorator, Component, Label, Sprite, SpriteFrame, Color, Node, EventTouch, Button } from 'cc';
+import { AssetLoader } from '../core/AssetLoader';
 
 const { ccclass, property } = _decorator;
 
@@ -87,40 +88,40 @@ export class LetterTile extends Component {
 
     private async loadTileSprites(): Promise<void> {
         const states: TileState[] = ['selectable', 'highlight', 'correct', 'wrong', 'disabled'];
+        const assetLoader = AssetLoader.getInstance();
+        
+        console.log('[LetterTile] 开始加载瓦片图片资源...');
         
         for (const state of states) {
-            const spritePath = `tiles/tile_${state}`;
+            const assetPath = `tile_${state}/spriteFrame`;
             
             try {
-                const spriteFrame = await this.loadSpriteFrame(spritePath);
+                // 检查资源是否已完全加载并缓存
+                const isCached = assetLoader.isAssetCached('tiles', assetPath);
+                
+                if (isCached) {
+                    console.log(`[LetterTile] 🚀 立即获取已缓存的瓦片: ${state}`);
+                } else {
+                    console.log(`[LetterTile] ⏳ 瓦片资源需要加载: ${state}`);
+                }
+                
+                // 使用AssetLoader加载远程Bundle资源
+                const spriteFrame = await assetLoader.loadSpriteFrame('tiles', assetPath);
+                
                 if (spriteFrame) {
                     this.spriteFrames[state] = spriteFrame;
-                    console.log(`[LetterTile] 加载成功: ${spritePath}`);
+                    console.log(`[LetterTile] ✅ 瓦片加载成功: ${state}`);
                 } else {
-                    console.error(`[LetterTile] 加载失败: ${spritePath}`);
+                    console.error(`[LetterTile] ❌ 瓦片加载失败: ${state}`);
                 }
             } catch (error) {
-                console.error(`[LetterTile] 无法加载资源: ${spritePath}`, error);
+                console.error(`[LetterTile] ❌ 无法加载瓦片资源: ${state}`, error);
             }
         }
         
         this.isLoaded = true;
         this.updateVisual();
-    }
-
-    private loadSpriteFrame(path: string): Promise<SpriteFrame | null> {
-        return new Promise((resolve) => {
-            // 使用resources.load加载SpriteFrame，需要指定具体的子资源路径
-            resources.load(path + '/spriteFrame', SpriteFrame, (err, spriteFrame) => {
-                if (err) {
-                    console.warn(`[LetterTile] 加载SpriteFrame失败: ${path}`, err);
-                    resolve(null);
-                } else {
-                    console.log(`[LetterTile] 加载SpriteFrame成功: ${path}`);
-                    resolve(spriteFrame);
-                }
-            });
-        });
+        console.log('[LetterTile] 🎉 所有瓦片图片加载完成');
     }
 
     private updateVisual(): void {

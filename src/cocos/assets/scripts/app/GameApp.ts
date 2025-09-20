@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, director, sys, Sprite, assetManager, SpriteFrame } from 'cc';
+import { _decorator, Component, Node, director, sys, Sprite, assetManager, SpriteFrame, JsonAsset } from 'cc';
 import { GlossService } from '../data/GlossService';
 import { WordBank } from '../data/WordBank';
 import { GameBoard } from '../ui/GameBoard';
@@ -159,14 +159,14 @@ export class GameApp extends Component {
     private nextRound(): void {
         if (!this.isGameRunning) return;
 
-        // 随机选择4-6字母的单词
-        const targetLength = 4 + Math.floor(Math.random() * 3); // 4, 5, 或 6
+        // 随机选择4-7字母的单词
+        const targetLength = 4 + Math.floor(Math.random() * 4); // 4, 5, 6, 或 7
         this.currentTargetWord = this.wordBank.pick(targetLength);
         
         if (!this.currentTargetWord) {
             console.error('[GameApp] 无法获取目标单词，长度:', targetLength);
             // 尝试其他长度
-            for (let len = 4; len <= 6; len++) {
+            for (let len = 4; len <= 7; len++) {
                 this.currentTargetWord = this.wordBank.pick(len);
                 if (this.currentTargetWord) break;
             }
@@ -309,13 +309,47 @@ export class GameApp extends Component {
      */
     private async loadRemoteAssets(): Promise<void> {
         try {
-            // 加载游戏背景Bundle - 必须指定到spriteFrame子资源
-            await this.loadRemoteBundle('bg', 'game_scene_bg/spriteFrame', this.backgroundSprite);
-            console.log('[GameApp] 远程背景资源加载完成');
+            // 并行加载所有远程Bundle
+            await Promise.all([
+                // 加载游戏背景Bundle - 必须指定到spriteFrame子资源
+                this.loadRemoteBundle('bg', 'game_scene_bg/spriteFrame', this.backgroundSprite),
+                // 预加载词库Bundle（不需要立即使用，所以预加载即可）
+                this.preloadWordsBundle()
+            ]);
+            console.log('[GameApp] 远程资源加载完成');
         } catch (error) {
             console.error('[GameApp] 远程资源加载失败:', error);
             // 可以加载本地备用资源或显示占位图
         }
+    }
+
+    /**
+     * 预加载词库Bundle
+     */
+    private preloadWordsBundle(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            console.log('[GameApp] 开始预加载words Bundle');
+            assetManager.loadBundle('words', (err, bundle) => {
+                if (err) {
+                    console.error('[GameApp] words Bundle加载失败:', err);
+                    reject(err);
+                    return;
+                }
+
+                // 预加载词库文件
+                const assetsToLoad = ['words_core', 'zh_gloss'];
+                bundle.load(assetsToLoad, JsonAsset, (err, assets) => {
+                    if (err) {
+                        console.error('[GameApp] 词库资源预加载失败:', err);
+                        reject(err);
+                        return;
+                    }
+
+                    console.log('[GameApp] words Bundle预加载完成，包含资源:', assetsToLoad);
+                    resolve();
+                });
+            });
+        });
     }
 
     /**

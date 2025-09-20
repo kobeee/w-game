@@ -1,4 +1,4 @@
-import { _decorator, JsonAsset, resources, sys } from 'cc';
+import { _decorator, JsonAsset, resources, sys, assetManager } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -20,13 +20,13 @@ export class GlossService {
      */
     async load(_useFull: boolean = false): Promise<void> {
         // 目前只有基础词库，忽略_useFull参数
-        const wordsFile = 'words/words_core';
-        const glossFile = 'words/zh_gloss';
+        const wordsFile = 'words_core';
+        const glossFile = 'zh_gloss';
 
         try {
-            // 加载词库数据
-            const wordsAsset = await this.loadJsonAsset(wordsFile);
-            const glossAsset = await this.loadJsonAsset(glossFile);
+            // 加载词库数据（从words Bundle）
+            const wordsAsset = await this.loadJsonFromBundle('words', wordsFile);
+            const glossAsset = await this.loadJsonFromBundle('words', glossFile);
 
             if (wordsAsset && wordsAsset.json) {
                 this.wordBank = wordsAsset.json;
@@ -147,6 +147,33 @@ export class GlossService {
      */
     getWordBankData(): any {
         return this.wordBank;
+    }
+
+    private async loadJsonFromBundle(bundleName: string, assetPath: string): Promise<JsonAsset | null> {
+        return new Promise((resolve) => {
+            console.log(`[GlossService] 尝试从Bundle '${bundleName}' 加载资源: ${assetPath}`);
+            
+            assetManager.loadBundle(bundleName, (err, bundle) => {
+                if (err) {
+                    console.error(`[GlossService] Bundle '${bundleName}' 加载失败:`, err);
+                    resolve(null);
+                    return;
+                }
+
+                bundle.load(assetPath, JsonAsset, (err, asset) => {
+                    if (err) {
+                        console.error(`[GlossService] 无法从Bundle '${bundleName}' 加载资源: ${assetPath}`, err);
+                        resolve(null);
+                    } else if (!asset) {
+                        console.error(`[GlossService] 资源为空: ${bundleName}/${assetPath}`);
+                        resolve(null);
+                    } else {
+                        console.log(`[GlossService] 成功从Bundle '${bundleName}' 加载资源: ${assetPath}`);
+                        resolve(asset);
+                    }
+                });
+            });
+        });
     }
 
     private async loadJsonAsset(path: string): Promise<JsonAsset | null> {

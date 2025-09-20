@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Prefab, instantiate, Vec3, Layout } from 'cc';
+import { _decorator, Component, Node, Prefab, instantiate, Vec3, Layout, UITransform } from 'cc';
 import { LetterTile, TileState } from './LetterTile';
 
 const { ccclass, property } = _decorator;
@@ -11,10 +11,10 @@ interface GridPosition {
 @ccclass('GameBoard')
 export class GameBoard extends Component {
     @property
-    rows: number = 4;
+    rows: number = 5;
 
     @property
-    cols: number = 4;
+    cols: number = 5;
 
     @property(Prefab)
     tilePrefab: Prefab = null!;
@@ -27,15 +27,18 @@ export class GameBoard extends Component {
     private currentTargetWord: string = '';
     private gridLetters: string[][] = [];
 
-    // 8方向移动（上、下、左、右、左上、右上、左下、右下）
+    // 4方向移动（上、下、左、右）- 移除斜线连接提升可见性
     private readonly directions: GridPosition[] = [
         { row: -1, col: 0 }, { row: 1, col: 0 },   // 上下
-        { row: 0, col: -1 }, { row: 0, col: 1 },   // 左右
-        { row: -1, col: -1 }, { row: -1, col: 1 }, // 左上、右上
-        { row: 1, col: -1 }, { row: 1, col: 1 }    // 左下、右下
+        { row: 0, col: -1 }, { row: 0, col: 1 }    // 左右
     ];
 
     protected onLoad(): void {
+        // 强制确保网格为5×5
+        this.rows = 5;
+        this.cols = 5;
+        console.log('[GameBoard] 强制设置网格大小为5×5，当前rows:', this.rows, 'cols:', this.cols);
+        
         this.setupContainer();
     }
 
@@ -144,18 +147,27 @@ export class GameBoard extends Component {
             return;
         }
         
-        // 设置容器的Grid Layout组件
-        let layout = this.container.getComponent(Layout);
-        if (!layout) {
-            layout = this.container.addComponent(Layout);
+        console.log('[GameBoard] 设置容器（不使用Layout，直接定位瓦片）...');
+        
+        // 移除Layout组件（如果存在），我们直接控制瓦片位置
+        const existingLayout = this.container.getComponent(Layout);
+        if (existingLayout) {
+            existingLayout.destroy();
+            console.log('[GameBoard] 已移除Layout组件，改用直接定位');
         }
         
-        layout.type = Layout.Type.GRID;
-        layout.startAxis = Layout.AxisDirection.HORIZONTAL;
-        layout.constraint = Layout.Constraint.FIXED_COL;
-        layout.constraintNum = this.cols;
-        layout.spacingX = 10;
-        layout.spacingY = 10;
+        // 设置容器为固定尺寸，确保Widget能正确居中
+        const containerTransform = this.container.getComponent(UITransform);
+        if (containerTransform) {
+            const tileSize = 90;
+            const spacing = 5;
+            const gridSize = this.rows * tileSize + (this.rows - 1) * spacing; // 5*90 + 4*5 = 470px
+            
+            containerTransform.setContentSize(gridSize, gridSize);
+            console.log('[GameBoard] 设置容器尺寸:', gridSize, 'x', gridSize, '(不依赖Layout)');
+        }
+        
+        console.log('[GameBoard] 容器设置完成，将直接定位每个瓦片');
     }
 
     private clearGrid(): void {
@@ -254,6 +266,17 @@ export class GameBoard extends Component {
             return;
         }
         
+        console.log('[GameBoard] 开始创建瓦片节点，网格大小:', this.rows, 'x', this.cols, '总瓦片数:', this.rows * this.cols);
+        
+        // 计算参数
+        const tileSize = 90; // LetterTile尺寸
+        const spacing = 5;   // 间隙
+        const step = tileSize + spacing; // 步长 = 95px
+        const centerRow = Math.floor(this.rows / 2); // 中心行 = 2
+        const centerCol = Math.floor(this.cols / 2); // 中心列 = 2
+        
+        console.log('[GameBoard] 布局参数: 瓦片', tileSize, 'px, 间隙', spacing, 'px, 步长', step, 'px, 中心格子(', centerRow, ',', centerCol, ')');
+        
         for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
                 const tileNode = instantiate(this.tilePrefab);
@@ -269,12 +292,22 @@ export class GameBoard extends Component {
                     this.tiles[row][col] = tile;
                 }
                 
+                // 关键：直接计算每个瓦片相对于中心格子的位置
+                const offsetX = (col - centerCol) * step; // 列偏移
+                const offsetY = (centerRow - row) * step; // 行偏移（Y轴向上为正）
+                
+                tileNode.setPosition(offsetX, offsetY, 0);
+                console.log(`[GameBoard] 瓦片(${row},${col}) 位置: (${offsetX}, ${offsetY})`);
+                
                 this.container.addChild(tileNode);
             }
         }
         
         this.updateSelectableStates();
+        
+        console.log('[GameBoard] 瓦片布局完成，中心格子位于(0,0)');
     }
+
 
     private onTileClicked(row: number, col: number, tile: LetterTile): void {
         const position = { row, col };
