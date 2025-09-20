@@ -1,4 +1,5 @@
-import { _decorator, Component, Node, Button, Toggle, director, sys } from 'cc';
+import { _decorator, Component, Node, Button, Toggle, director, sys, Sprite, assetManager, SpriteFrame } from 'cc';
+// 使用assetManager.loadBundle动态加载远程Asset Bundle资源
 
 const { ccclass, property } = _decorator;
 
@@ -10,15 +11,19 @@ export class MainMenu extends Component {
     @property(Toggle)
     useFullToggle: Toggle = null!;
 
-    @property(Node)
-    titleNode: Node = null!;
+    @property(Sprite)
+    titleSprite: Sprite = null!; // 标题图片Sprite组件，编辑器中不设置SpriteFrame
 
     @property(Node)
     settingsPanel: Node = null!;
 
-    protected onLoad(): void {
+    @property(Sprite)
+    backgroundSprite: Sprite = null!; // 编辑器中不设置SpriteFrame，完全动态加载
+
+    protected async onLoad(): Promise<void> {
         this.setupButtons();
         this.loadSettings();
+        await this.loadRemoteAssets(); // 动态加载远程资源
         console.log('[MainMenu] 主菜单初始化完成');
     }
 
@@ -62,7 +67,7 @@ export class MainMenu extends Component {
 
     private refreshUI(): void {
         // 刷新UI显示
-        if (this.titleNode) {
+        if (this.titleSprite) {
             // 可以在这里添加标题动画或其他UI效果
         }
 
@@ -179,14 +184,62 @@ export class MainMenu extends Component {
 
     protected onDestroy(): void {
         // 清理事件监听
-        if (this.startButton) {
+        if (this.startButton && this.startButton.node) {
             this.startButton.node.off(Button.EventType.CLICK, this.onStartGame, this);
         }
         
-        if (this.useFullToggle) {
+        if (this.useFullToggle && this.useFullToggle.node) {
             this.useFullToggle.node.off('toggle', this.onToggleChanged, this);
         }
         
         console.log('[MainMenu] 主菜单组件销毁');
+    }
+
+    /**
+     * 动态加载远程Asset Bundle资源
+     */
+    private async loadRemoteAssets(): Promise<void> {
+        try {
+            // 并行加载背景和标题资源
+            await Promise.all([
+                // 加载背景Bundle - 必须指定到spriteFrame子资源
+                this.loadRemoteBundle('bg', 'main_scene_bg/spriteFrame', this.backgroundSprite),
+                // 加载标题Bundle - 必须指定到spriteFrame子资源
+                this.loadRemoteBundle('title', 'title/spriteFrame', this.titleSprite)
+            ]);
+            console.log('[MainMenu] 远程资源加载完成');
+        } catch (error) {
+            console.error('[MainMenu] 远程资源加载失败:', error);
+            // 可以加载本地备用资源或显示占位图
+        }
+    }
+
+    /**
+     * 加载指定Bundle中的SpriteFrame资源
+     */
+    private loadRemoteBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
+        return new Promise((resolve, reject) => {
+            assetManager.loadBundle(bundleName, (err, bundle) => {
+                if (err) {
+                    console.error(`[MainMenu] Bundle '${bundleName}' 加载失败:`, err);
+                    reject(err);
+                    return;
+                }
+
+                bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+                    if (err) {
+                        console.error(`[MainMenu] SpriteFrame '${assetPath}' 加载失败:`, err);
+                        reject(err);
+                        return;
+                    }
+
+                    if (sprite) {
+                        sprite.spriteFrame = spriteFrame;
+                        console.log(`[MainMenu] 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
+                    }
+                    resolve();
+                });
+            });
+        });
     }
 }

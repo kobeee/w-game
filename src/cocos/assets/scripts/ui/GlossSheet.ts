@@ -1,4 +1,5 @@
-import { _decorator, Component, Node, Label, tween, Vec3, UITransform, EventTouch, Button, Sprite, SpriteFrame, resources } from 'cc';
+import { _decorator, Component, Node, Label, tween, Vec3, UITransform, EventTouch, Button, Sprite, SpriteFrame, Texture2D, assetManager, resources } from 'cc';
+// 使用assetManager.loadBundle动态加载远程Asset Bundle资源
 
 const { ccclass, property } = _decorator;
 
@@ -96,26 +97,18 @@ export class GlossSheet extends Component {
     }
 
     private async loadModalResources(): Promise<void> {
-        // 加载模态窗口9-slice背景
-        if (this.panel) {
-            try {
-                const modalCard = await this.loadSpriteFrame('modal/modal_card_9slice');
-                if (modalCard) {
-                    const sprite = this.panel.getComponent(Sprite);
-                    if (sprite) {
-                        sprite.spriteFrame = modalCard;
-                        sprite.type = Sprite.Type.SLICED; // 9-slice模式
-                        console.log('[GlossSheet] 加载成功: modal/modal_card_9slice');
-                    }
-                } else {
-                    console.warn('[GlossSheet] modal_card_9slice资源加载失败');
-                }
-            } catch (error) {
-                console.warn('[GlossSheet] 无法加载模态窗口背景，使用默认样式', error);
+        try {
+            // 加载modal Bundle中的弹窗背景 - 必须指定到spriteFrame子资源
+            if (this.panel) {
+                await this.loadRemoteBundle('modal', 'pop_card/spriteFrame', this.panel.getComponent(Sprite));
+                console.log('[GlossSheet] 弹窗背景加载成功');
             }
+        } catch (error) {
+            console.warn('[GlossSheet] 弹窗背景加载失败', error);
         }
 
-        // 加载收藏按钮星星图标
+        // 收藏按钮图标由本地resources加载（小图标不需要远程加载）
+        // 此部分保持原有逐级加载逼辑
         if (this.starButton) {
             try {
                 const starIcon = await this.loadSpriteFrame('badges/reward_star');
@@ -132,16 +125,71 @@ export class GlossSheet extends Component {
         }
     }
 
+    /**
+     * 加载指定Bundle中的SpriteFrame资源
+     */
+    private loadRemoteBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
+        return new Promise((resolve, reject) => {
+            assetManager.loadBundle(bundleName, (err, bundle) => {
+                if (err) {
+                    console.error(`[GlossSheet] Bundle '${bundleName}' 加载失败:`, err);
+                    reject(err);
+                    return;
+                }
+
+                bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+                    if (err) {
+                        console.error(`[GlossSheet] SpriteFrame '${assetPath}' 加载失败:`, err);
+                        reject(err);
+                        return;
+                    }
+
+                    if (sprite) {
+                        sprite.spriteFrame = spriteFrame;
+                        sprite.type = Sprite.Type.SLICED; // 弹窗背景使用9-slice
+                        console.log(`[GlossSheet] 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
+                    }
+                    resolve();
+                });
+            });
+        });
+    }
+
+    /**
+     * 从本地resources加载SpriteFrame（用于小图标等不需要远程加载的资源）
+     */
     private loadSpriteFrame(path: string): Promise<SpriteFrame | null> {
         return new Promise((resolve) => {
+            // 这部分保持原有的逐级加载逻辑，用于本地小资源
+            // 先尝试直接加载SpriteFrame
             resources.load(path, SpriteFrame, (err, spriteFrame) => {
-                if (err) {
-                    console.warn(`[GlossSheet] 加载SpriteFrame失败: ${path}`, err);
-                    resolve(null);
-                } else {
-                    console.log(`[GlossSheet] 加载成功: ${path}`);
+                if (!err && spriteFrame) {
+                    console.log(`[GlossSheet] 直接加载成功: ${path}`);
                     resolve(spriteFrame);
+                    return;
                 }
+                
+                // 如果失败，尝试加载图片文件并获取spriteFrame子资源
+                resources.load(path + '/spriteFrame', SpriteFrame, (err2, spriteFrame2) => {
+                    if (!err2 && spriteFrame2) {
+                        console.log(`[GlossSheet] 子资源加载成功: ${path}/spriteFrame`);
+                        resolve(spriteFrame2);
+                        return;
+                    }
+                    
+                    // 最后尝试加载Texture2D并创建SpriteFrame
+                    resources.load(path, Texture2D, (err3, texture) => {
+                        if (!err3 && texture) {
+                            const spriteFrame3 = new SpriteFrame();
+                            spriteFrame3.texture = texture;
+                            console.log(`[GlossSheet] 通过Texture2D创建成功: ${path}`);
+                            resolve(spriteFrame3);
+                        } else {
+                            console.warn(`[GlossSheet] 所有方式都失败: ${path}`, err, err2, err3);
+                            resolve(null);
+                        }
+                    });
+                });
             });
         });
     }
@@ -297,17 +345,17 @@ export class GlossSheet extends Component {
         this.clearAutoHideTimer();
         
         // 清理事件监听
-        if (this.starButton) {
+        if (this.starButton && this.starButton.isValid) {
             this.starButton.off(Button.EventType.CLICK, this.onStarClicked, this);
             this.starButton.off(Node.EventType.TOUCH_END, this.onStarClicked, this);
         }
         
-        if (this.closeButton) {
+        if (this.closeButton && this.closeButton.isValid) {
             this.closeButton.off(Button.EventType.CLICK, this.onCloseClicked, this);
             this.closeButton.off(Node.EventType.TOUCH_END, this.onCloseClicked, this);
         }
         
-        if (this.panel) {
+        if (this.panel && this.panel.isValid) {
             this.panel.off(Node.EventType.TOUCH_START, this.onPanelTouched, this);
         }
     }

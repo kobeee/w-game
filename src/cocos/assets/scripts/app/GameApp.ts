@@ -1,10 +1,11 @@
-import { _decorator, Component, Node, director, sys } from 'cc';
+import { _decorator, Component, Node, director, sys, Sprite, assetManager, SpriteFrame } from 'cc';
 import { GlossService } from '../data/GlossService';
 import { WordBank } from '../data/WordBank';
 import { GameBoard } from '../ui/GameBoard';
 import { HUD } from '../ui/HUD';
 import { GlossSheet } from '../ui/GlossSheet';
 import { AudioMgr } from '../util/AudioMgr';
+// 使用assetManager.loadBundle动态加载远程Asset Bundle资源
 
 
 const { ccclass, property } = _decorator;
@@ -19,6 +20,9 @@ export class GameApp extends Component {
 
     @property(GlossSheet)
     glossSheet: GlossSheet = null!;
+
+    @property(Sprite)
+    backgroundSprite: Sprite = null!; // 编辑器中不设置SpriteFrame，完全动态加载
 
     // 游戏服务
     private glossService: GlossService = new GlossService();
@@ -35,6 +39,7 @@ export class GameApp extends Component {
     protected async onLoad(): Promise<void> {
         console.log('[GameApp] 游戏开始初始化');
         
+        await this.loadRemoteAssets(); // 动态加载远程资源
         await this.initializeGame();
         this.setupEventListeners();
         this.setupComponents();
@@ -82,6 +87,9 @@ export class GameApp extends Component {
 
             // 初始化音频管理器
             this.audioMgr.init();
+            
+            // 重置生词本（确保从干净状态开始）
+            this.glossService.resetSessionNotebook();
             
         } catch (error) {
             console.error('[GameApp] 初始化失败:', error);
@@ -190,6 +198,11 @@ export class GameApp extends Component {
         if (currentString.length === this.currentTargetWord.length) {
             // 短暂延迟后自动检查
             this.scheduleFunction(() => {
+                // 场景切换或节点销毁保护
+                if (!this.node || !this.node.isValid) return;
+                if (!this.isGameRunning) return;
+                if (!this.board || !this.board.node || !this.board.node.isValid) return;
+
                 const finalString = this.board.getCurrentString();
                 if (finalString === this.currentTargetWord) {
                     this.onCorrectAnswer();
@@ -220,7 +233,9 @@ export class GameApp extends Component {
         const zh = this.glossService.explain(this.currentTargetWord);
         
         // 将单词添加到生词本
+        console.log('[GameApp] 准备将单词添加到生词本:', this.currentTargetWord);
         this.glossService.star(this.currentTargetWord);
+        console.log('[GameApp] 单词已添加到生词本，当前生词本:', this.glossService.getSessionNotebook());
         
         // 记录到HUD以供信息按钮使用
         if (this.hud) {
@@ -279,7 +294,57 @@ export class GameApp extends Component {
     }
 
     private scheduleFunction(callback: () => void, delay: number): void {
-        setTimeout(callback, delay * 1000);
+        setTimeout(() => {
+            try {
+                if (!this.node || !this.node.isValid) return;
+                callback();
+            } catch (err) {
+                console.warn('[GameApp] 延迟回调执行失败或已无效:', err);
+            }
+        }, delay * 1000);
+    }
+
+    /**
+     * 动态加载远程Asset Bundle资源
+     */
+    private async loadRemoteAssets(): Promise<void> {
+        try {
+            // 加载游戏背景Bundle - 必须指定到spriteFrame子资源
+            await this.loadRemoteBundle('bg', 'game_scene_bg/spriteFrame', this.backgroundSprite);
+            console.log('[GameApp] 远程背景资源加载完成');
+        } catch (error) {
+            console.error('[GameApp] 远程资源加载失败:', error);
+            // 可以加载本地备用资源或显示占位图
+        }
+    }
+
+    /**
+     * 加载指定Bundle中的SpriteFrame资源
+     */
+    private loadRemoteBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
+        return new Promise((resolve, reject) => {
+            assetManager.loadBundle(bundleName, (err, bundle) => {
+                if (err) {
+                    console.error(`[GameApp] Bundle '${bundleName}' 加载失败:`, err);
+                    reject(err);
+                    return;
+                }
+
+                bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+                    if (err) {
+                        console.error(`[GameApp] SpriteFrame '${assetPath}' 加载失败:`, err);
+                        reject(err);
+                        return;
+                    }
+
+                    if (sprite) {
+                        sprite.spriteFrame = spriteFrame;
+                        console.log(`[GameApp] 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
+                    }
+                    resolve();
+                });
+            });
+        });
     }
 
     protected onDestroy(): void {
@@ -290,7 +355,7 @@ export class GameApp extends Component {
         }
         
         // 清理事件监听
-        if (this.board) {
+        if (this.board && this.board.node) {
             this.board.node.off('board:change', this.onBoardChange, this);
         }
         

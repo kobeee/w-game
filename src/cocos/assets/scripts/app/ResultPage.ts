@@ -1,6 +1,7 @@
-import { _decorator, Component, Node, Label, Button, ScrollView, Prefab, instantiate, director, sys, Color } from 'cc';
+import { _decorator, Component, Node, Label, Button, ScrollView, Prefab, instantiate, director, sys, Color, resources, Sprite, assetManager, SpriteFrame } from 'cc';
 import { GlossService } from '../data/GlossService';
 import { GlossSheet } from '../ui/GlossSheet';
+// 使用assetManager.loadBundle动态加载远程Asset Bundle资源
 
 const { ccclass, property } = _decorator;
 
@@ -30,13 +31,40 @@ export class ResultPage extends Component {
     @property(GlossSheet)
     glossSheet: GlossSheet = null!;
 
-    private glossService: GlossService = new GlossService();
+    @property(Sprite)
+    backgroundSprite: Sprite = null!; // 编辑器中不设置SpriteFrame，完全动态加载
+
+    private glossService: GlossService;
     private sessionNotebook: string[] = [];
 
     protected async onLoad(): Promise<void> {
         console.log('[ResultPage] 结果页面初始化');
         
+        // 初始化GlossService实例
+        this.glossService = new GlossService();
+        
+        await this.loadRemoteAssets(); // 动态加载远程资源
+        
         this.setupButtons();
+
+        // 容错处理：自动绑定ScrollView的content
+        if (!this.notebookContent && this.notebookScrollView && this.notebookScrollView.content) {
+            this.notebookContent = this.notebookScrollView.content;
+            console.warn('[ResultPage] notebookContent未绑定，已自动使用ScrollView.content');
+        }
+
+        // 预制体容错：若未绑定则自动从resources加载
+        if (!this.notebookItemPrefab) {
+            try {
+                this.notebookItemPrefab = await this.loadPrefab('WordItem');
+                if (this.notebookItemPrefab) {
+                    console.warn('[ResultPage] notebookItemPrefab未绑定，已自动加载WordItem预制体');
+                }
+            } catch (e) {
+                console.warn('[ResultPage] 自动加载WordItem预制体失败', e);
+            }
+        }
+
         await this.loadNotebookData();
         this.displayStatistics();
         this.displayNotebook();
@@ -56,13 +84,46 @@ export class ResultPage extends Component {
 
     private async loadNotebookData(): Promise<void> {
         try {
-            // 初始化词汇服务（不需要加载完整词库）
+            // 初始化词汇服务（只加载词义库，用于显示中文释义）
             await this.glossService.load(false);
             
-            // 获取本局生词本
-            this.sessionNotebook = this.glossService.getSessionNotebook();
+            // 直接从localStorage读取生词本数据
+            const stored = sys.localStorage.getItem('notebook_session');
+            console.log('[ResultPage] 从localStorage读取生词本数据:', stored);
             
-            console.log('[ResultPage] 本局生词本加载完成，单词数量:', this.sessionNotebook.length);
+            if (stored) {
+                try {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed)) {
+                        // 过滤和规范化数据 - 修复微信小游戏环境下的扩展运算符问题
+                        const filteredArray = parsed
+                            .filter(item => typeof item === 'string' && item.trim() !== '')
+                            .map(item => item.trim().toUpperCase());
+                        
+                        console.log('[ResultPage] 过滤后的数组:', filteredArray, '类型:', typeof filteredArray, '是数组:', Array.isArray(filteredArray));
+                        
+                        // 使用Array.from而不是扩展运算符，确保微信小游戏兼容性
+                        const uniqueSet = new Set(filteredArray);
+                        console.log('[ResultPage] 去重Set对象:', uniqueSet, '类型:', typeof uniqueSet);
+                        
+                        this.sessionNotebook = Array.from(uniqueSet);
+                        console.log('[ResultPage] 去重后的数组:', this.sessionNotebook, '类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
+                        
+                        console.log('[ResultPage] 本局生词本加载完成，单词数量:', this.sessionNotebook.length);
+                        console.log('[ResultPage] 单词列表:', this.sessionNotebook);
+                    } else {
+                        console.warn('[ResultPage] 生词本数据格式不正确，期待数组，实际:', typeof parsed, parsed);
+                        this.sessionNotebook = [];
+                    }
+                } catch (parseError) {
+                    console.warn('[ResultPage] 生词本数据解析失败:', parseError);
+                    this.sessionNotebook = [];
+                }
+            } else {
+                console.log('[ResultPage] 没有找到生词本数据');
+                this.sessionNotebook = [];
+            }
+            
         } catch (error) {
             console.error('[ResultPage] 加载生词本数据失败:', error);
             this.sessionNotebook = [];
@@ -86,6 +147,17 @@ export class ResultPage extends Component {
     }
 
     private displayNotebook(): void {
+        console.log('[ResultPage] displayNotebook开始，sessionNotebook:', this.sessionNotebook);
+        console.log('[ResultPage] sessionNotebook类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
+        console.log('[ResultPage] sessionNotebook长度:', this.sessionNotebook.length);
+        
+        // 详细检查每个元素
+        if (Array.isArray(this.sessionNotebook)) {
+            this.sessionNotebook.forEach((item, index) => {
+                console.log(`[ResultPage] 元素[${index}]:`, item, '类型:', typeof item, '是字符串:', typeof item === 'string');
+            });
+        }
+        
         if (!this.notebookContent || !this.notebookItemPrefab) {
             console.warn('[ResultPage] notebookContent或notebookItemPrefab未设置');
             return;
@@ -101,7 +173,12 @@ export class ResultPage extends Component {
 
         // 创建生词本条目
         for (const word of this.sessionNotebook) {
-            this.createNotebookItem(word);
+            // 额外的类型检查
+            if (typeof word === 'string' && word.trim() !== '') {
+                this.createNotebookItem(word);
+            } else {
+                console.warn('[ResultPage] 跳过无效的生词本条目:', typeof word, word);
+            }
         }
 
         console.log('[ResultPage] 生词本显示完成，条目数量:', this.sessionNotebook.length);
@@ -121,11 +198,17 @@ export class ResultPage extends Component {
     }
 
     private createNotebookItem(word: string): void {
+        // 确保word是字符串类型
+        if (typeof word !== 'string') {
+            console.warn('[ResultPage] createNotebookItem收到非字符串参数:', typeof word, word);
+            return;
+        }
+
         const itemNode = instantiate(this.notebookItemPrefab);
         
-        // 查找子节点并设置内容
+        // 查找子节点并设置内容（兼容ZhLabel与DescLabel）
         const wordLabel = itemNode.getChildByPath('WordLabel')?.getComponent(Label);
-        const zhLabel = itemNode.getChildByPath('DescLabel')?.getComponent(Label);
+        const zhLabel = (itemNode.getChildByPath('DescLabel') || itemNode.getChildByPath('ZhLabel'))?.getComponent(Label);
 
         if (wordLabel) {
             wordLabel.string = word.toUpperCase();
@@ -145,6 +228,61 @@ export class ResultPage extends Component {
         });
 
         this.notebookContent.addChild(itemNode);
+    }
+
+    /**
+     * 动态加载远程Asset Bundle资源
+     */
+    private async loadRemoteAssets(): Promise<void> {
+        try {
+            // 加载结果页背景Bundle - 必须指定到spriteFrame子资源
+            await this.loadRemoteBundle('bg', 'result_scene_bg/spriteFrame', this.backgroundSprite);
+            console.log('[ResultPage] 远程背景资源加载完成');
+        } catch (error) {
+            console.error('[ResultPage] 远程资源加载失败:', error);
+            // 可以加载本地备用资源或显示占位图
+        }
+    }
+
+    /**
+     * 加载指定Bundle中的SpriteFrame资源
+     */
+    private loadRemoteBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
+        return new Promise((resolve, reject) => {
+            assetManager.loadBundle(bundleName, (err, bundle) => {
+                if (err) {
+                    console.error(`[ResultPage] Bundle '${bundleName}' 加载失败:`, err);
+                    reject(err);
+                    return;
+                }
+
+                bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+                    if (err) {
+                        console.error(`[ResultPage] SpriteFrame '${assetPath}' 加载失败:`, err);
+                        reject(err);
+                        return;
+                    }
+
+                    if (sprite) {
+                        sprite.spriteFrame = spriteFrame;
+                        console.log(`[ResultPage] 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
+                    }
+                    resolve();
+                });
+            });
+        });
+    }
+
+    private loadPrefab(path: string): Promise<Prefab | null> {
+        return new Promise((resolve) => {
+            resources.load(path, Prefab, (err, prefab) => {
+                if (!err && prefab) {
+                    resolve(prefab);
+                } else {
+                    resolve(null);
+                }
+            });
+        });
     }
 
 
@@ -182,10 +320,8 @@ export class ResultPage extends Component {
     private onReturnToMenu(): void {
         console.log('[ResultPage] 返回主菜单');
         
-        director.loadScene('MainMenu').then(() => {
+        director.loadScene('MainMenu', () => {
             console.log('[ResultPage] 成功返回主菜单');
-        }).catch(error => {
-            console.error('[ResultPage] 返回主菜单失败:', error);
         });
     }
 
@@ -219,14 +355,19 @@ export class ResultPage extends Component {
 
     protected onDestroy(): void {
         // 清理事件监听
-        if (this.clearButton) {
+        if (this.clearButton && this.clearButton.node) {
             this.clearButton.node.off(Button.EventType.CLICK, this.onClearNotebook, this);
         }
         
-        if (this.returnButton) {
+        if (this.returnButton && this.returnButton.node) {
             this.returnButton.node.off(Button.EventType.CLICK, this.onReturnToMenu, this);
         }
         
         console.log('[ResultPage] 结果页面组件销毁');
     }
+
+    /**
+     * Asset Bundle系统会自动处理远程资源加载
+     * 只需要在场景中直接设置SpriteFrame引用即可
+     */
 }

@@ -1,0 +1,13 @@
+services:
+  w-game-assets:
+    build: .
+    container_name: w-game-assets
+    ports:
+      - "9090:8080"
+    volumes:
+      - ./remote:/app/remote:ro
+      - ./logs:/app/logs
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

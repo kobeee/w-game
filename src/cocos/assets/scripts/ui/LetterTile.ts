@@ -196,7 +196,7 @@ export class LetterTile extends Component {
     }
 
     protected onDestroy(): void {
-        if (this.node) {
+        if (this.node && this.node.isValid) {
             this.node.off(Node.EventType.TOUCH_START, this.onTouchStart, this);
             this.node.off(Node.EventType.TOUCH_END, this.onTouchEnd, this);
             this.node.off(Node.EventType.TOUCH_CANCEL, this.onTouchCancel, this);
