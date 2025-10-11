@@ -337,7 +337,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `wxml.mdc`, `wxss.mdc` - 微信小程序相关语言规范
 
 ### 框架规则 (`.cursor/rules/frameworks/`)
-- `cocos_creator.md` - **Cocos Creator 3.8.5 开发规范（本项目主要框架）**
+- `cocos_creator.md` - **Cocos Creator 3.8.7 开发规范（本项目主要框架）**
 - `fastapi.mdc` - FastAPI 开发规范
 - `react.mdc`, `nextjs.mdc`, `vuejs.mdc` - 前端框架规范
 - `flutter.mdc`, `react-native.mdc` - 移动开发框架规范
@@ -346,13 +346,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `tailwind.mdc` - CSS框架规范
 
 **注意**: 虽然项目包含多种技术栈的规范文件，但本w-game项目主要使用：
-- **前端**: TypeScript + Cocos Creator 3.8.5（微信小游戏）
+- **前端**: TypeScript + Cocos Creator 3.8.7（微信小游戏）
 - **后端**: Python + FastAPI (V0.3+版本)
 
 其他规则文件为未来扩展或其他项目预留。
 
 ## **你的任务**
-你是我的游戏项目协作程序员。环境：Cocos Creator 3.8.5（TypeScript, 2D, 微信小游戏）。
+你是我的游戏项目协作程序员。环境：Cocos Creator 3.8.7（TypeScript, 2D, 微信小游戏）。
 从现在起，你对每个任务必须做到：
 - 在**指定路径**新建/修改文件，**给出完整代码**（从 import 到文件结尾），并解释如何在**场景层级**上绑定组件/节点。
 - **不引入任何第三方依赖**；用 Creator 自带 API（resources.load、JsonAsset、director.loadScene 等）。

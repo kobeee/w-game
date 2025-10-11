@@ -1,4 +1,4 @@
-你是我的协作程序员。环境是 **Cocos Creator 3.8.5 / TypeScript / 2D / 微信小游戏**。  
+你是我的协作程序员。环境是 **Cocos Creator 3.8.7 / TypeScript / 2D / 微信小游戏**。  
 项目结构（已存在）：
 ```
 w-game/

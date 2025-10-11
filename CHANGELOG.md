@@ -1100,7 +1100,7 @@ NotebookScrollView (WordItem 预制体列表)
 - **触发条件**：`JSON.parse()` 后数组中存在 `undefined`、`null` 或其他类型，调用 `.toUpperCase()` 时抛出异常
 
 **3. 微信小游戏构建配置过时**：
-- **问题根源**：Cocos Creator 3.8.5 内置构建模板将 `libVersion` 硬编码为 `"game"`
+- **问题根源**：Cocos Creator 3.8.7 内置构建模板将 `libVersion` 硬编码为 `"game"`
 - **兼容性问题**：新版微信开发者工具不再支持该值，需要使用官方认可的版本标识
 
 #### **修复实施**
@@ -1222,7 +1222,7 @@ private createNotebookItem(word: string): void {
 - ✅ 资源加载优雅降级，UI显示正常
 
 **3. 兼容性验证**：
-- ✅ Cocos Creator 3.8.5 预览模式稳定运行
+- ✅ Cocos Creator 3.8.7 预览模式稳定运行
 - ✅ 微信小游戏构建和运行正常
 - ✅ 不同数据状态下的容错处理有效
 
@@ -1262,10 +1262,10 @@ private createNotebookItem(word: string): void {
 - 最初采用手工编写的 `RemoteAssetManager.ts` 方案
 - 实现了自定义的远程资源下载和缓存逻辑
 - 修改了所有场景脚本使用远程加载方式
-- **问题发现**：这是错误的实施方式，Cocos Creator 3.8.5提供了官方的Asset Bundle远程包系统
+- **问题发现**：这是错误的实施方式，Cocos Creator 3.8.7提供了官方的Asset Bundle远程包系统
 
 **正确方案实施**：
-经用户指正，通过网络调研发现Cocos Creator 3.8.5构建发布配置中有官方"资源服务器"功能，应使用Asset Bundle远程包系统：
+经用户指正，通过网络调研发现Cocos Creator 3.8.7构建发布配置中有官方"资源服务器"功能，应使用Asset Bundle远程包系统：
 
 1. **Asset Bundle配置方式**：
    - 在编辑器中将资源文件夹"配置为Bundle"
@@ -1307,7 +1307,7 @@ private createNotebookItem(word: string): void {
 
 1. **官方Asset Bundle方法调研**
    通过WebSearch发现：
-   - Cocos Creator 3.8.5内置Asset Bundle远程包功能
+   - Cocos Creator 3.8.7内置Asset Bundle远程包功能
    - 在构建面板中配置"资源服务器地址"
    - 远程包文件自动使用 `/remote` 路径
    - 无需手工编写下载逻辑
@@ -1365,7 +1365,7 @@ if ! docker --version >/dev/null 2>&1; then
 
 **7. UUID压缩算法问题**
 - **发现**：微信开发者工具中文件路径错误，找不到application.js
-- **根因**：Cocos Creator 3.8.5的UUID压缩算法存在Bug
+- **根因**：Cocos Creator 3.8.7的UUID压缩算法存在Bug
 - **表现**：22字符base64 UUID与32字符hex UUID转换不一致
 - **影响**：导致构建文件路径与运行时查找路径不匹配
 
@@ -1472,5 +1472,5 @@ tools/remote-resources/
 ---
 
 **文档版本**: v1.2  
-**技术栈**: Cocos Creator 3.8.5 + TypeScript  
+**技术栈**: Cocos Creator 3.8.7 + TypeScript  
 **平台目标**: 微信小游戏(竖屏)
