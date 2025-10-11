@@ -2,9 +2,37 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 快速开始
+
+### 核心命令
+```bash
+# 在Cocos Creator中打开项目
+# 项目路径: src/cocos/
+
+# 微信小游戏构建和预览
+# 1. Cocos Creator菜单：项目 → 构建发布
+# 2. 选择微信小游戏平台，填写资源服务器地址（如需远程资源）
+# 3. 点击"构建"按钮
+# 4. 构建完成后，使用微信开发者工具打开 src/cocos/build/wechatgame/ 目录
+
+# 启动远程资源服务器（解决4MB包体限制）
+cd tools/remote-resources/
+./deploy.sh
+# 或使用Docker:
+docker-compose up -d
+```
+
+### 关键路径
+- **Cocos项目根**: `src/cocos/`
+- **脚本源码**: `src/cocos/assets/scripts/`
+- **场景文件**: `src/cocos/assets/scenes/` (Boot → Menu → Game → Result)
+- **远程资源**: `tools/remote-resources/remote/` (Bundle资源部署目录)
+- **词库数据**: `src/cocos/assets/resources/words/words_core.json`
+- **开发日志**: `CHANGELOG.md` (最新记录在文件末尾)
+
 ## 项目概述
 
-这是一个名为"拯救萌宠·猜单词"（w-game）的微信小游戏项目，使用Cocos Creator 3.x + TypeScript开发。游戏核心玩法是在叠层字母中按正确顺序点击拼出单词。
+这是一个名为"拯救萌宠·猜单词"（w-game）的微信小游戏项目，使用Cocos Creator 3.8.7 + TypeScript开发。游戏核心玩法是在5×5字母网格中按正确顺序点击拼出单词。
 
 ## 技术架构
 
@@ -27,6 +55,102 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **框架**: Python FastAPI
 - **数据库**: PostgreSQL + Redis
 - **V0.1版本完全离线**，无需后端
+
+## 核心架构设计
+
+### 关键组件与职责
+
+#### 应用层 (`assets/scripts/app/`)
+- **LoadingScene.ts**: 启动场景，初始化预加载管理器
+- **PreloadManager.ts**: 远程Bundle预加载系统（bg/title/tiles/modal），采用`bundle.load()`完全加载策略
+- **MainMenu.ts**: 主菜单场景，游戏入口
+- **GameApp.ts**: 游戏主逻辑控制器，管理游戏循环、目标词生成、答题判定
+- **ResultPage.ts**: 结果页面，显示成绩和生词本
+
+#### 核心逻辑层 (`assets/scripts/core/`)
+- **AssetLoader.ts**: 统一资源加载器单例，三级缓存检查（Bundle缓存 → 资源缓存 → 网络加载）
+
+#### UI层 (`assets/scripts/ui/`)
+- **GameBoard.ts**: 5×5字母网格管理器
+  - 使用纯数学定位法，以中心格子(2,2)为原点计算每个瓦片位置
+  - 完全抛弃Layout组件，避免奇数网格布局问题
+  - 4方向连接算法（移除斜线连接，提升可见性）
+- **LetterTile.ts**: 单个字母瓦片组件，5种状态（selectable/highlight/correct/wrong/disabled）
+- **HUD.ts**: 游戏HUD，显示目标词、倒计时、分数
+- **GlossSheet.ts**: 词义弹窗（Bottom Sheet），支持自动/手动展示、收藏功能
+
+#### 数据层 (`assets/scripts/data/`)
+- **GlossService.ts**: 词汇服务
+  - 词库加载和查询（支持内嵌/外部JSON）
+  - 词义解释和归一化
+  - 生词本管理（localStorage持久化）
+- **WordBank.ts**: 单词银行，按长度分桶存储，支持目标词随机选择
+
+#### 工具层 (`assets/scripts/util/`)
+- **AudioMgr.ts**: 音效管理器
+
+### 关键数据流
+
+#### 游戏主循环
+```
+GameApp.startGame()
+  → 生成目标词 (4-7字母)
+  → GameBoard.spawnGrid(targetWord)
+    → 生成可达路径算法
+    → 纯数学计算瓦片位置（中心原点坐标系）
+  → 玩家点击字母
+  → GameBoard.onTileSelect() → 路径验证
+  → GameApp.submit() → 答题判定
+    → 正确: onCorrectAnswer() → 显示词义卡 → 保存生词本
+    → 错误: onWrongAnswer() → 清空选择
+  → 时间到/完成 → ResultPage
+```
+
+#### 资源加载流程（解决4MB包体限制）
+```
+LoadingScene.onLoad()
+  → PreloadManager.preloadAllBundles()
+    → bundle.load() 完全加载（非preload）
+    → 资源立即可用，零延迟
+  → 场景切换
+    → AssetLoader.loadSpriteFrame()
+      → 检查Bundle缓存 (assetManager.getBundle)
+      → 检查资源缓存 (bundle.get)
+      → 立即返回或动态加载
+```
+
+#### 生词本数据流
+```
+GameApp.onCorrectAnswer()
+  → GlossService.star(word)
+    → sessionNotebook数组去重
+    → JSON.stringify保存到localStorage
+  → ResultPage.loadNotebookData()
+    → 读取localStorage['notebook_session']
+    → 类型安全过滤（防止Set对象污染）
+    → 动态创建WordItem预制体列表
+```
+
+### 关键技术突破
+
+#### 1. 5×5网格纯数学定位法
+- **问题**: Layout Grid组件对奇数网格存在算法缺陷
+- **解决**: 以中心格子为原点，纯数学计算每个位置
+  ```typescript
+  const step = tileSize + spacing; // 95px
+  const offsetX = (col - centerCol) * step;
+  const offsetY = (centerRow - row) * step;
+  tileNode.setPosition(offsetX, offsetY, 0);
+  ```
+
+#### 2. 远程Bundle完全加载机制
+- **问题**: `bundle.preload()`仅下载，后续`bundle.load()`仍需反序列化时间
+- **解决**: 预加载阶段直接使用`bundle.load()`完全加载，使用阶段`bundle.get()`立即获取（<1ms）
+
+#### 3. 微信小游戏平台兼容性
+- **Set对象序列化问题**: 使用`Array.from(set)`替代扩展运算符`[...set]`
+- **事件监听器防护**: 所有`onDestroy()`添加空指针和有效性检查
+- **TypeScript降级**: 避免ES2017+语法（如`padStart`）
 
 ## 开发流程
 
@@ -350,6 +474,144 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **后端**: Python + FastAPI (V0.3+版本)
 
 其他规则文件为未来扩展或其他项目预留。
+
+## 常见问题与解决方案
+
+### Asset Bundle远程资源问题
+
+#### 问题1: 资源加载失败 - 路径错误
+**症状**: `bundle.load('image_name', SpriteFrame)` 返回null
+**原因**: 图片资源包含多个子资源（ImageAsset、Texture2D、SpriteFrame）
+**解决**: 必须明确指定子资源路径
+```typescript
+// ❌ 错误
+bundle.load('result_scene_bg', SpriteFrame)
+
+// ✅ 正确
+bundle.load('result_scene_bg/spriteFrame', SpriteFrame)
+```
+
+#### 问题2: 预加载无效，资源仍有延迟
+**症状**: 调用`bundle.preload()`后，使用时仍需等待加载
+**原因**: `preload()`仅下载不反序列化，后续`load()`仍需初始化时间
+**解决**: 预加载阶段直接使用`bundle.load()`完全加载
+```typescript
+// ❌ 错误（仅下载）
+bundle.preload(assetPath, SpriteFrame, callback);
+
+// ✅ 正确（完全加载，立即可用）
+bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+    // 资源已完全加载，后续bundle.get()立即返回
+});
+```
+
+#### 问题3: 构建包超过4MB限制
+**症状**: 微信小游戏无法发布，提示包体积超限
+**解决**:
+1. 在Cocos Creator中将资源文件夹"配置为Bundle"并勾选"配置为远程包"
+2. 构建时填写资源服务器地址（如`http://localhost:9090`）
+3. 启动Docker资源服务器：`cd tools/remote-resources/ && ./deploy.sh`
+
+### 网格布局问题
+
+#### 问题: 5×5网格显示偏移，不居中
+**症状**: 奇数网格（5×5）布局右偏或位置异常
+**原因**: Layout Grid组件对奇数网格的内部计算存在偏差
+**解决**: 使用纯数学定位法，以中心格子为原点
+```typescript
+// 移除Layout组件
+const existingLayout = this.container.getComponent(Layout);
+if (existingLayout) {
+    existingLayout.destroy();
+}
+
+// 纯数学计算位置
+const tileSize = 90;
+const spacing = 5;
+const step = tileSize + spacing;
+const centerRow = Math.floor(this.rows / 2); // 2
+const centerCol = Math.floor(this.cols / 2); // 2
+
+const offsetX = (col - centerCol) * step;
+const offsetY = (centerRow - row) * step;
+tileNode.setPosition(offsetX, offsetY, 0);
+```
+
+### 微信小游戏平台兼容性
+
+#### 问题1: 扩展运算符在微信环境失效
+**症状**: `[...new Set(array)]` 在Cocos预览正常，微信小游戏中异常
+**原因**: 微信小游戏环境对ES6扩展运算符支持存在差异
+**解决**: 使用`Array.from()`替代
+```typescript
+// ❌ 微信小游戏不兼容
+this.array = [...new Set(filteredArray)];
+
+// ✅ 跨平台兼容
+const uniqueSet = new Set(filteredArray);
+this.array = Array.from(uniqueSet);
+```
+
+#### 问题2: localStorage数据类型污染
+**症状**: `JSON.parse()`后数据包含非字符串元素，调用`.toUpperCase()`报错
+**原因**: Set对象被错误序列化，或包含undefined/null
+**解决**: 添加类型安全过滤
+```typescript
+const parsed = JSON.parse(stored);
+if (Array.isArray(parsed)) {
+    this.sessionNotebook = parsed.filter(item =>
+        typeof item === 'string' && item.trim() !== ''
+    );
+}
+```
+
+#### 问题3: 组件销毁时空指针错误
+**症状**: `Cannot read properties of null (reading 'off')`
+**原因**: `onDestroy()`时组件属性可能已被销毁为null
+**解决**: 添加空指针检查
+```typescript
+protected onDestroy(): void {
+    if (this.button && this.button.node) {
+        this.button.node.off(Button.EventType.CLICK, this.onClick, this);
+    }
+}
+```
+
+### 开发调试技巧
+
+#### 查看Bundle缓存状态
+```typescript
+// 检查Bundle是否已缓存
+const bundle = assetManager.getBundle('bundleName');
+console.log('Bundle已缓存:', !!bundle);
+
+// 检查资源是否已加载
+const asset = bundle?.get('assetPath/spriteFrame', SpriteFrame);
+console.log('资源已加载:', !!asset);
+```
+
+#### 调试生词本数据
+```typescript
+// 查看localStorage原始数据
+const raw = sys.localStorage.getItem('notebook_session');
+console.log('localStorage原始数据:', raw);
+
+// 验证JSON解析结果
+const parsed = JSON.parse(raw);
+console.log('解析后的数据:', parsed, '是数组:', Array.isArray(parsed));
+```
+
+#### 测试远程资源服务器
+```bash
+# 检查服务器是否运行
+curl http://localhost:9090/remote/bg/
+
+# 查看Bundle文件列表
+ls tools/remote-resources/remote/bg/
+
+# 查看Docker容器日志
+docker-compose -f tools/remote-resources/docker-compose.yml logs
+```
 
 ## **你的任务**
 你是我的游戏项目协作程序员。环境：Cocos Creator 3.8.7（TypeScript, 2D, 微信小游戏）。
