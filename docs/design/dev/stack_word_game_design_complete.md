@@ -567,14 +567,25 @@ function getDailySeed(): string {
 
 ### 7.2 视觉反馈规范
 
-#### 卡片状态
+#### 卡片状态（基于 LetterTile 复用方案）
 
-| 状态 | 视觉效果 | 说明 |
-|------|---------|------|
-| **可点击** | 白色、发光光圈、缩放呼吸 | 无遮挡的卡片 |
-| **被遮挡** | 灰色半透明（50%）、无光圈 | 被上层牌压住 |
-| **悬浮中** | 黄色高亮、向上浮动 | 点击后飞向牌槽 |
-| **闪烁** | 黄色呼吸动画（0.3s频率） | 检测到单词 |
+| 状态 | 使用资源 | 视觉效果 | 说明 |
+|------|---------|---------|------|
+| **可点击（无遮挡）** | `tile_selectable.png` | 白色背景、发光光圈、缩放呼吸 | 无遮挡的卡片 |
+| **被遮挡** | `tile_disabled.png` | 灰色半透明（50%）、无光圈 | 被上层牌压住 |
+| **悬浮中（飞向牌槽）** | `tile_highlight.png` | 黄色高亮、向上浮动 | 点击后飞向牌槽 |
+| **在牌槽中** | `tile_highlight.png` | 黄色高亮 | 已进入牌槽的字母 |
+| **闪烁（检测到单词）** | `tile_correct.png` | 黄色呼吸动画（0.3s频率） | 检测到单词，建议调色为黄色 |
+
+**状态映射逻辑**（在 `LetterTile.ts` 中实现）：
+```typescript
+export type TileState =
+    | 'selectable'  // 可点击（无遮挡）→ tile_selectable.png
+    | 'disabled'    // 被遮挡 → tile_disabled.png
+    | 'highlight'   // 悬浮中 + 在牌槽中 → tile_highlight.png
+    | 'correct'     // 闪烁（检测到单词）→ tile_correct.png
+    | 'wrong';      // 预留（暂不使用）→ tile_wrong.png
+```
 
 #### 动画时间轴
 
@@ -2074,17 +2085,161 @@ class StackBoard {
 
 ### 19.3 UI素材资源
 
-| 文件名 | 格式 | 尺寸 | 用途 |
-|--------|------|------|------|
-| `card_bg.png` | PNG | 90×120px | 卡片背景 |
-| `card_bg_blocked.png` | PNG | 90×120px | 被遮挡卡片背景（灰色） |
-| `slot_bg.png` | PNG | 90×120px | 牌槽格子背景 |
-| `slot_empty.png` | PNG | 90×120px | 空牌槽背景 |
-| `btn_continue.png` | PNG | 120×50px | "继续拼"按钮 |
-| `btn_clear.png` | PNG | 120×50px | "消除"按钮 |
-| `icon_timer.png` | PNG | 32×32px | 倒计时图标 |
-| `icon_capacity.png` | PNG | 32×32px | 牌槽容量图标 |
-| `bg_result.png` | PNG | 750×1334px | 结算页背景 |
+#### 🔄 完全复用的资源（从"小试牛刀"玩法）
+
+| 资源名称 | 位置 | 原用途 | 新玩法用途 | 说明 |
+|---------|------|-------|-----------|------|
+| `tile_selectable.png` | `assets/bundle/tiles/` | 可选择状态 | **可点击（无遮挡）** - 白色背景 | 零修改复用 |
+| `tile_disabled.png` | `assets/bundle/tiles/` | 禁用状态 | **被遮挡** - 灰色半透明 | 零修改复用 |
+| `tile_highlight.png` | `assets/bundle/tiles/` | 高亮状态 | **悬浮中（飞向牌槽）** + **在牌槽中** - 黄色光晕 | 零修改复用 |
+| `tile_correct.png` | `assets/bundle/tiles/` | 正确状态 | **闪烁（检测到单词）** - 绿色（可改为黄色） | 建议调色为黄色 |
+| `tile_wrong.png` | `assets/bundle/tiles/` | 错误状态 | 暂不使用（预留） | 预留 |
+| `LetterTile.prefab` | `assets/resources/` | 字母瓦片预制体 | 字母卡片预制体 | 零修改复用 |
+| `LetterTile.ts` | `assets/scripts/ui/` | 字母瓦片组件 | 字母卡片组件 | 添加状态映射逻辑 |
+| 游戏背景 | `assets/bundle/bg/` | "小试牛刀"背景 | 堆叠游戏场景背景 | 零修改复用 |
+| Button预制体 | `assets/prefabs/` | 现有按钮 | 消除/继续拼/结束按钮 | 代码设置颜色 |
+| `GlossSheet.ts` | `assets/scripts/ui/` | 释义浮层组件 | 单词释义弹窗 | 零修改复用 |
+
+**复用率统计**：
+- 字母卡片相关：**100%复用**（5张贴图 + 1个预制体 + 1个组件）
+- 背景与按钮：**100%复用**
+- **总体资源复用率：93%**（更新后）
+
+#### 🆕 必需新增的资源（仅1张贴图 + 1个预制体！）
+
+> **🎯 采用方案B：独立格子拼接**
+> - 优势：动态扩容极其灵活，代码简洁，仅需 1 张贴图
+> - 原理：每个格子是独立节点，使用 Layout 组件自动排列
+> - 字母牌直接嵌入格子内部，无需单独的填充状态
+> - **SlotItem需制作成预制体**，支持动态实例化扩容
+
+**必需的贴图资源**：
+
+| 文件名 | 格式 | 尺寸 | 用途 | 设计规格 | 优先级 |
+|--------|------|------|------|---------|--------|
+| `slot_item.png` | PNG | 85×85px | 单个牌槽格子背景 | 圆角矩形框，描边2px #7F8C8D，透明背景，圆角8px | ⭐⭐⭐ 必需 |
+
+**必需的预制体资源**：
+
+| 预制体名称 | 位置 | 用途 | 说明 |
+|-----------|------|------|------|
+| `SlotItem.prefab` | `assets/prefabs/stack/` | 牌槽格子预制体 | 用于动态实例化扩容，包含slot_item.png背景和LetterSlot空节点 |
+
+**设计规格详情**：
+```yaml
+slot_item.png:
+  尺寸: 85×85px (比字母牌80×80大5px，留出视觉间隙)
+  外观: 圆角矩形框
+  描边: 2px，颜色 #7F8C8D (中灰色)
+  背景: 透明
+  圆角: 8px
+
+说明:
+  - 尺寸比 LetterTile (80×80) 大 5px
+  - 字母牌嵌入时居中对齐，四周留出 2.5px 边距
+  - 空格子显示描边框，有字母时字母牌覆盖在上方
+```
+
+**布局方案（方案B - 推荐）**：
+```
+独立格子拼接，使用 Layout 自动排列：
+
+[A] [T] [ ] [ ] [ ] [ ] [ ]
+ ↑   ↑   ↑   ↑   ↑   ↑   ↑
+独立 独立 独立 独立 独立 独立 独立
+格子 格子 格子 格子 格子 格子 格子
+
+实现：
+SlotQueueContainer [Layout Horizontal, spacing=5]
+├── SlotItem1 [85×85, SlotItem.prefab实例]
+│   ├── Frame [Sprite, slot_item.png]
+│   └── LetterSlot [Node, 80×80空节点]
+│       └── LetterTile [80×80, 嵌入居中] (动态addChild)
+├── SlotItem2 [85×85, SlotItem.prefab实例]
+│   ├── Frame [Sprite]
+│   └── LetterSlot [Node]
+│       └── LetterTile [80×80]
+└── SlotItem3 [85×85, SlotItem.prefab实例] (空格子)
+    ├── Frame [Sprite]
+    └── LetterSlot [Node, 空]
+```
+
+**SlotItem.prefab 结构**：
+```
+SlotItem [Node, 85×85]
+├── Frame [Sprite] ← slot_item.png (圆角矩形框)
+│   - UITransform: 85×85
+│   - Sprite: slot_item.png
+│   - Color: #7F8C8D
+└── LetterSlot [Node, 80×80] ← 空节点，用于嵌入LetterTile
+    - UITransform: 80×80
+    - Position: (0, 0) 居中对齐
+    - 作用: 作为LetterTile的容器，动态addChild
+```
+
+**扩容代码示例**：
+```typescript
+/**
+ * 扩容牌槽（方案B - 极其简洁）
+ */
+expandSlot(): void {
+    if (this.capacity >= this.maxCapacity) return;
+
+    // 直接实例化SlotItem预制体
+    const newSlot = instantiate(this.slotItemPrefab);
+    newSlot.setParent(this.itemsContainer);
+
+    // 播放弹出动画
+    newSlot.setScale(0, 0, 1);
+    tween(newSlot)
+        .to(0.3, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+        .start();
+
+    this.capacity++;
+    this.slotNodes.push(newSlot);
+
+    // Layout 组件自动重新排列，无需手动计算位置
+}
+
+/**
+ * 添加字母到牌槽（嵌入LetterTile）
+ */
+addLetterToSlot(slotIndex: number, letterTile: Node): void {
+    const slotNode = this.slotNodes[slotIndex];
+    const letterSlot = slotNode.getChildByName('LetterSlot');
+
+    if (letterSlot) {
+        // 将LetterTile嵌入到LetterSlot节点中
+        letterTile.setParent(letterSlot);
+        letterTile.setPosition(0, 0, 0);
+    }
+}
+```
+
+**临时替代方案**（零资源快速验证）：
+```typescript
+// 用纯色Sprite代替 slot_item.png
+const slotItem = new Node('SlotItem');
+const sprite = slotItem.addComponent(Sprite);
+sprite.type = Sprite.Type.SIMPLE;
+sprite.color = new Color(127, 140, 141, 255); // #7F8C8D
+const transform = slotItem.getComponent(UITransform);
+transform.setContentSize(85, 85);
+```
+
+**资源总数更新**：
+- ✅ 字母卡片：100% 复用 `LetterTile.prefab` (5张贴图)
+- 🆕 牌槽格子：仅需 1 张 `slot_item.png` (85×85px)
+- 🆕 牌槽预制体：需制作 `SlotItem.prefab`（结构简单，5分钟完成）
+- 🆕 装饰背景：可选（可用代码生成半透明Sprite）
+
+**最终资源复用率：93%**（仅需新增 1 张贴图 + 1 个简单预制体）
+
+**为何需要SlotItem预制体？**
+1. ✅ 支持动态实例化扩容（`instantiate(slotItemPrefab)`）
+2. ✅ 统一样式管理（所有槽位尺寸、颜色一致）
+3. ✅ 便于后续迭代（如添加槽位编号、特效、状态指示）
+4. ✅ 符合Cocos Creator最佳实践
 
 ---
 
