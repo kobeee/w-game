@@ -662,17 +662,25 @@ export type TileState =
 
 ### 8.2 模块职责划分
 
-| 模块 | 职责 | 文件路径 |
-|------|------|---------|
-| **GameApp** | 游戏主循环、关卡生成、结算 | `assets/scripts/stack/GameApp.ts` |
-| **StackBoard** | 堆叠棋盘管理、遮挡判定 | `assets/scripts/stack/StackBoard.ts` |
-| **LetterCard** | 单个字母卡片组件 | `assets/scripts/stack/LetterCard.ts` |
-| **SlotQueue** | 牌槽队列、扩容逻辑 | `assets/scripts/stack/SlotQueue.ts` |
-| **WordMatcher** | 单词检测（增量/Trie树） | `assets/scripts/stack/WordMatcher.ts` |
-| **LevelGenerator** | 关卡生成、可解性验证 | `assets/scripts/stack/LevelGenerator.ts` |
-| **ProgressiveDictMgr** | 词库分级加载 | `assets/scripts/data/ProgressiveDictMgr.ts` |
-| **TutorialManager** | 新手引导 | `assets/scripts/tutorial/TutorialManager.ts` |
-| **AntiCheat** | 防作弊验证 | `assets/scripts/core/AntiCheat.ts` |
+> **📢 重要说明**: 本项目采用**分层架构**,脚本按职责分类,而非按玩法模块创建独立目录。
+
+| 模块 | 职责 | 文件路径 | 所属层级 |
+|------|------|---------|----------|
+| **StackGameApp** | 堆叠模式游戏主循环、关卡生成、结算 | `assets/scripts/app/StackGameApp.ts` | 应用层 |
+| **StackBoard** | 堆叠棋盘管理、遮挡判定 | `assets/scripts/ui/StackBoard.ts` | UI层 |
+| **LetterCard** | 单个字母卡片组件（复用LetterTile） | `assets/scripts/ui/LetterTile.ts` | UI层 |
+| **SlotQueue** | 牌槽队列、扩容逻辑 | `assets/scripts/ui/SlotQueue.ts` | UI层 |
+| **WordMatcher** | 单词检测（增量/Trie树） | `assets/scripts/core/WordMatcher.ts` | 核心层 |
+| **LevelGenerator** | 关卡生成、可解性验证 | `assets/scripts/core/LevelGenerator.ts` | 核心层 |
+| **GlossService** | 词库管理、词义查询（复用现有） | `assets/scripts/data/GlossService.ts` | 数据层 |
+| **AssetLoader** | 统一资源加载器（复用现有） | `assets/scripts/core/AssetLoader.ts` | 核心层 |
+| **AudioMgr** | 音效管理器（复用现有） | `assets/scripts/util/AudioMgr.ts` | 工具层 |
+
+**资源加载说明**:
+- **Bundle远程加载**: 所有图片资源(背景、字母瓦片、牌槽)通过AssetLoader从远程Bundle加载
+- **Bundle目录**: `assets/bundle/` (bg, tiles, slot, modal, title, words)
+- **预制体**: `assets/resources/` (LetterTile.prefab, SlotItem.prefab等)
+- **加载流程**: Loading场景 → PreloadManager批量加载Bundle → 游戏场景使用AssetLoader即时获取资源
 
 ---
 
@@ -2113,17 +2121,33 @@ class StackBoard {
 > - 字母牌直接嵌入格子内部，无需单独的填充状态
 > - **SlotItem需制作成预制体**，支持动态实例化扩容
 
-**必需的贴图资源**：
+**必需的贴图资源**（已在项目中创建）：
 
-| 文件名 | 格式 | 尺寸 | 用途 | 设计规格 | 优先级 |
-|--------|------|------|------|---------|--------|
-| `slot_item.png` | PNG | 85×85px | 单个牌槽格子背景 | 圆角矩形框，描边2px #7F8C8D，透明背景，圆角8px | ⭐⭐⭐ 必需 |
+| 文件名 | 格式 | 尺寸 | 实际位置 | 用途 | 加载方式 | 优先级 |
+|--------|------|------|---------|------|---------|--------|
+| `slot_item.png` | PNG | 85×85px | `assets/bundle/slot/slot_item.png` | 单个牌槽格子背景 | **Bundle远程加载** | ⭐⭐⭐ 必需 |
 
 **必需的预制体资源**：
 
 | 预制体名称 | 位置 | 用途 | 说明 |
 |-----------|------|------|------|
-| `SlotItem.prefab` | `assets/prefabs/stack/` | 牌槽格子预制体 | 用于动态实例化扩容，包含slot_item.png背景和LetterSlot空节点 |
+| `SlotItem.prefab` | `assets/resources/` | 牌槽格子预制体 | 用于动态实例化扩容，包含slot_item.png背景和LetterSlot空节点 |
+
+**资源加载代码示例**：
+```typescript
+// 在SlotQueue组件中加载牌槽贴图
+import { AssetLoader } from '../core/AssetLoader';
+
+protected async onLoad(): Promise<void> {
+    // 从slot Bundle加载牌槽格子背景
+    const slotBg = await AssetLoader.getInstance().loadSpriteFrame('slot', 'slot_item/spriteFrame');
+
+    // 从resources加载预制体
+    const prefab = await AssetLoader.getInstance().loadPrefab('resources', 'SlotItem');
+
+    this.initSlots();
+}
+```
 
 **设计规格详情**：
 ```yaml
