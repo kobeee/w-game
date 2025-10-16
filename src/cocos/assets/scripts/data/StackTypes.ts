@@ -425,19 +425,15 @@ export interface GridCoordinate {
 
 /**
  * 允许的偏移值枚举
+ * 注意：只支持整数偏移，不支持22.5px的四分之一遮挡
+ * 原因：22.5px会产生浮点坐标，破坏像素对齐
  */
 export enum AllowedOffset {
     /** 完全对齐网格 */
     ZERO = 0,
 
-    /** 1/4卡片偏移 (22.5px) */
-    QUARTER = 22.5,
-
     /** 1/2卡片偏移 (45px) */
     HALF = 45,
-
-    /** -1/4卡片偏移 */
-    MINUS_QUARTER = -22.5,
 
     /** -1/2卡片偏移 */
     MINUS_HALF = -45
@@ -447,11 +443,9 @@ export enum AllowedOffset {
  * 允许的偏移值数组
  */
 export const ALLOWED_OFFSETS: number[] = [
-    AllowedOffset.MINUS_HALF,
-    AllowedOffset.MINUS_QUARTER,
-    AllowedOffset.ZERO,
-    AllowedOffset.QUARTER,
-    AllowedOffset.HALF
+    AllowedOffset.MINUS_HALF,  // -45
+    AllowedOffset.ZERO,        // 0
+    AllowedOffset.HALF         // 45
 ];
 
 /**
@@ -469,10 +463,10 @@ export interface CardConfig {
 
     /** 偏移量 */
     offset: {
-        /** X轴偏移 (必须是 ±45, ±22.5, 0) */
+        /** X轴偏移 (必须是 ±45 或 0) */
         x: number;
 
-        /** Y轴偏移 (必须是 ±45, ±22.5, 0) */
+        /** Y轴偏移 (必须是 ±45 或 0) */
         y: number;
     };
 
@@ -518,9 +512,6 @@ export const GRID_UNIT = 90;
 
 /** 默认网格大小 (7×7) */
 export const DEFAULT_GRID_SIZE = 7;
-
-/** 1/4卡偏移 */
-export const OFFSET_QUARTER = 22.5;
 
 /** 1/2卡偏移 */
 export const OFFSET_HALF = 45;

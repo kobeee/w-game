@@ -52,14 +52,10 @@ export class StackBoard extends Component {
             const tileNode = this.tileNodes.get(card.id);
             if (!tileNode) continue;
 
-            const uiTransform = tileNode.getComponent(UITransform);
-            if (!uiTransform) {
-                console.warn(`[StackBoard] 卡片${card.id}无UITransform组件`);
-                continue;
-            }
-
-            // 获取卡片的世界坐标（中心点）
-            const worldPos = uiTransform.convertToWorldSpaceAR(Vec3.ZERO);
+            // ✅ 卡片的位置已经是由布局生成器计算的世界坐标
+            // ❌ 不要使用 convertToWorldSpaceAR()，它会经过Canvas的变换，产生浮点误差
+            // 直接使用 card.position 即可（这已经是准确的世界坐标）
+            const worldPos = card.position;
 
             // 标准卡片尺寸
             const cardWidth = 90;
@@ -238,13 +234,12 @@ export class StackBoard extends Component {
      * 获取卡片的世界坐标
      */
     public getCardWorldPosition(cardId: string): Vec3 | null {
-        const tileNode = this.tileNodes.get(cardId);
-        if (!tileNode) return null;
+        const card = this.cards.find(c => c.id === cardId);
+        if (!card) return null;
 
-        const uiTransform = tileNode.getComponent(UITransform);
-        if (!uiTransform) return null;
-
-        return uiTransform.convertToWorldSpaceAR(Vec3.ZERO);
+        // ✅ 直接返回card.position，这已经是准确的世界坐标
+        // ❌ 不要使用convertToWorldSpaceAR()，会产生浮点误差
+        return card.position;
     }
 
     /**

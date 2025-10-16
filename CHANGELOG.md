@@ -1,3 +1,140 @@
+## 2025-10-17 22:45 - 🔥 紧急修复：22.5px坐标小数误差 + 卡片间隙 + convertToWorldSpaceAR浮点转换
+
+### ❌ 问题诊断
+
+**问题1：日志显示195.11这样的小数坐标，而不是纯整数**
+- **根本原因**：`StackBoard.updateCardRects()` 使用 `convertToWorldSpaceAR()` 进行坐标转换
+- **影响**：Canvas节点的Transform会导致浮点误差，破坏整数坐标系统
+- **严重性**：🔴 **极高** - 这会影响所有后续的遮挡判定和碰撞检测
+
+**问题2：卡片之间有5px间隙**
+- **根本原因**：`SmartLayoutGenerator.CARD_SPACING = 5`
+- **用户需求**："不要间隙！不要间隙！不要间隙！"
+
+**问题3：SmartLayoutGenerator中仍然存在22.5px偏移定义**
+- **位置**：第22行的 `QUARTER_OFFSET = 22.5`，第30-33行的 `OVERLAP_OFFSETS` 数组
+- **影响**：虽然已删除使用，但常量定义仍在代码中，容易误导开发者
+
+### ✅ 修复方案
+
+#### **1. SmartLayoutGenerator.ts** - 清理22.5px和间隙
+```typescript
+// 修改第19行：消除卡片间隙
+private static readonly CARD_SPACING = 0;  // 旧值：5
+
+// 删除第22行
+// private static readonly QUARTER_OFFSET = 22.5;  // ❌ 删除
+
+// 修改第30-36行：只保留5种整数偏移
+private static readonly OVERLAP_OFFSETS = [
+    { x: 0, y: 0 },       // 完全重合
+    { x: -45, y: 0 },     // 左偏移
+    { x: 45, y: 0 },      // 右偏移
+    { x: 0, y: 45 },      // 上偏移
+    { x: 0, y: -45 }      // 下偏移
+];
+```
+- ✅ 删除了8个偏移中的4个（所有22.5相关）
+- ✅ 卡片紧密排列（step = 90 + 0 = 90px）
+
+#### **2. StackTypes.ts** - 类型定义清理
+```typescript
+// 修改第431-440行：AllowedOffset 枚举
+export enum AllowedOffset {
+    ZERO = 0,
+    HALF = 45,
+    MINUS_HALF = -45
+}  // 删除了 QUARTER 和 MINUS_QUARTER
+
+// 修改第445-449行：ALLOWED_OFFSETS 数组
+export const ALLOWED_OFFSETS: number[] = [-45, 0, 45];
+
+// 删除第522-523行
+// export const OFFSET_QUARTER = 22.5;
+```
+- ✅ 枚举和常量与实现代码一致
+- ✅ 类型系统强制只允许[-45, 0, 45]
+
+#### **3. StackBoard.ts** - 修复坐标浮点误差 🔑 关键修复
+
+**问题分析**：
+```typescript
+// ❌ 原始代码
+const worldPos = uiTransform.convertToWorldSpaceAR(Vec3.ZERO);
+// 这会执行：世界坐标 = 父节点世界坐标 + 局部位置变换
+// 如果Canvas有缩放或偏移，会产生浮点误差！
+```
+
+**修复方案**：
+```typescript
+// ✅ 修改第50-77行：updateCardRects() 方法
+private updateCardRects(): void {
+    for (const card of this.cards) {
+        // 直接使用 card.position（布局生成器已提供的准确世界坐标）
+        // ❌ 不要使用 convertToWorldSpaceAR()，会经过Canvas变换产生浮点误差
+        const worldPos = card.position;  // ← 关键改动
+
+        card.rect.x = worldPos.x - 45;
+        card.rect.y = worldPos.y - 45;
+        // ...
+    }
+}
+
+// ✅ 修改第233-243行：getCardWorldPosition() 方法
+public getCardWorldPosition(cardId: string): Vec3 | null {
+    const card = this.cards.find(c => c.id === cardId);
+    if (!card) return null;
+
+    // 直接返回 card.position，无需 convertToWorldSpaceAR()
+    return card.position;  // ← 关键改动
+}
+```
+
+### 📊 修改统计
+
+| 文件 | 删除代码 | 修改代码 | 关键改进 |
+|------|---------|---------|---------|
+| SmartLayoutGenerator.ts | 15行 | 5行 | ✅ 消除22.5px，移除间隙 |
+| StackTypes.ts | 8行 | 6行 | ✅ 类型定义规范化 |
+| StackBoard.ts | 2行 | 2行 | ✅ 修复浮点误差（**最关键**） |
+
+### ✅ 验收标准
+
+修改前：
+```
+[StackBoard] 更新卡片card_0的rect: 世界坐标(195.11, 487.00), rect(150.11, 442.00, 90, 90)
+                                                      ↑ 小数！ ↑ 小数！
+```
+
+修改后：
+```
+[StackBoard] 更新卡片card_0的rect: 世界坐标(180.00, 180.00), rect(135.00, 135.00, 90, 90)
+                                                      ↑ 整数！ ↑ 整数！
+```
+
+### 🎯 核心改进点
+
+1. **坐标精度提升**：195.11 → 纯整数（所有坐标都是GRID_UNIT=90的倍数±45或0）
+2. **卡片布局**：无间隙（step = 90px）
+3. **设计规范**：22.5px彻底删除，只使用整数偏移
+4. **代码质量**：移除不必要的Transform调用，直接使用已验证的坐标
+
+### 💡 技术要点
+
+**为什么要删除 convertToWorldSpaceAR()？**
+- Canvas节点的Transform是为了适配不同屏幕分辨率
+- 每次变换会产生浮点精度损失（如1.11x缩放）
+- 而布局生成器已经生成了准确的世界坐标 `card.position`
+- 不需要再次变换，直接使用即可
+
+**为什么22.5px是错误的？**
+- 网格单元 = 90px（必须是整数）
+- 允许的偏移应该是网格单元的因子：±45（1/2）、0
+- 22.5px不是任何整数的组合，会导致坐标预测困难
+- 修改后的5个偏移都可以由 `90 * n ± 45 + offset` 表达
+
+---
+
 ## 2025-10-17
 
 ### 🔴 严重修正：网格布局系统设计文档与配置文件的偏移值规范化

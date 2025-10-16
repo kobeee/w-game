@@ -16,27 +16,23 @@ export class SmartLayoutGenerator {
     private static readonly CARD_HEIGHT = 90;
 
     // 卡片间距（同层卡片之间的安全距离）
-    private static readonly CARD_SPACING = 5;
+    // 堆叠布局不留间隙！卡片应该紧密排列
+    private static readonly CARD_SPACING = 0;
 
-    // 四分区偏移量（用于上层遮挡下层）
-    private static readonly QUARTER_OFFSET = 22.5; // 卡片宽度的1/4
-    private static readonly HALF_OFFSET = 45;      // 卡片宽度的1/2
+    // 二分之一遮挡偏移量（用于上层遮挡下层）
+    private static readonly HALF_OFFSET = 45;  // 卡片宽度的1/2
 
     /**
      * 遮挡类型（上层卡片相对下层卡片的偏移）
+     * 只保留整数偏移，避免浮点坐标
+     * 注意：不再支持22.5px的四分之一遮挡（会产生.5小数）
      */
     private static readonly OVERLAP_OFFSETS = [
-        // 四分之一遮挡（遮住四个角）
-        { x: -22.5, y: 22.5 },   // 左上角
-        { x: 22.5, y: 22.5 },    // 右上角
-        { x: -22.5, y: -22.5 },  // 左下角
-        { x: 22.5, y: -22.5 },   // 右下角
-
-        // 二分之一遮挡（遮住四条边）
-        { x: -45, y: 0 },        // 左边
-        { x: 45, y: 0 },         // 右边
-        { x: 0, y: 45 },         // 上边
-        { x: 0, y: -45 },        // 下边
+        { x: 0, y: 0 },       // 完全重合
+        { x: -45, y: 0 },     // 左偏移
+        { x: 45, y: 0 },      // 右偏移
+        { x: 0, y: 45 },      // 上偏移
+        { x: 0, y: -45 }      // 下偏移
     ];
 
     /**
