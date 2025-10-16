@@ -1,0 +1,20 @@
+{
+    "layoutName": "test_simple",
+    "gridSize": {
+        "rows": 7,
+        "cols": 7
+    },
+    "cards": [
+        {"layer": 0, "gridRow": 3, "gridCol": 2, "offset": {"x": 0, "y": 0}, "letter": "C"},
+        {"layer": 0, "gridRow": 3, "gridCol": 3, "offset": {"x": 0, "y": 0}, "letter": "A"},
+        {"layer": 0, "gridRow": 3, "gridCol": 4, "offset": {"x": 0, "y": 0}, "letter": "T"},
+
+        {"layer": 1, "gridRow": 3, "gridCol": 2, "offset": {"x": 45, "y": 0}, "letter": "D"},
+        {"layer": 1, "gridRow": 3, "gridCol": 3, "offset": {"x": 0, "y": 45}, "letter": "O"},
+        {"layer": 1, "gridRow": 3, "gridCol": 4, "offset": {"x": -45, "y": 0}, "letter": "G"},
+
+        {"layer": 2, "gridRow": 3, "gridCol": 3, "offset": {"x": 45, "y": 0}, "letter": "X"},
+        {"layer": 2, "gridRow": 3, "gridCol": 3, "offset": {"x": -45, "y": 0}, "letter": "Y"},
+        {"layer": 2, "gridRow": 3, "gridCol": 3, "offset": {"x": 0, "y": 45}, "letter": "Z"}
+    ]
+}

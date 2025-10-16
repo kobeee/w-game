@@ -1,5 +1,6 @@
 import { _decorator, Component, Label, ProgressBar, Sprite, tween, Vec3, director, Color, Tween } from 'cc';
 import { PreloadManager } from '../app/PreloadManager';
+import { GlossService } from '../data/GlossService';
 
 const { ccclass, property } = _decorator;
 
@@ -79,25 +80,50 @@ export class LoadingUI extends Component {
      */
     private async startLoading(): Promise<void> {
         console.log('[LoadingUI] 开始预加载流程');
-        
+
         // 设置进度回调
         this.preloadManager.setProgressCallback(this.onLoadingProgress.bind(this));
-        
+
         try {
             // 执行预加载
             await this.preloadManager.preloadAllBundles();
-            
+
+            // Bundle加载完成后，初始化GlossService
+            console.log('[LoadingUI] Bundle预加载完成，开始初始化词库...');
+            this.updateStatus(0.85, '正在初始化词库系统...');
+
+            const glossService = GlossService.getInstance();
+            await glossService.load(true); // 加载扩展词库（8-10字母，用于堆叠模式）
+
+            console.log('[LoadingUI] 词库初始化完成');
+            this.updateStatus(1.0, '所有资源加载完成！');
+
             // 加载完成，延迟一下再跳转
             this.scheduleOnce(() => {
                 this.navigateToMainMenu();
             }, 1.0);
-            
+
         } catch (error) {
             console.error('[LoadingUI] 预加载过程出现错误:', error);
             // 即使出错也跳转到主菜单
             this.scheduleOnce(() => {
                 this.navigateToMainMenu();
             }, 2.0);
+        }
+    }
+
+    /**
+     * 更新加载状态
+     */
+    private updateStatus(progress: number, message: string): void {
+        if (this.progressBar) {
+            this.progressBar.progress = progress;
+        }
+        if (this.progressLabel) {
+            this.progressLabel.string = `${Math.round(progress * 100)}%`;
+        }
+        if (this.statusLabel) {
+            this.statusLabel.string = message;
         }
     }
     

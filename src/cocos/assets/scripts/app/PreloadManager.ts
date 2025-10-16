@@ -1,5 +1,5 @@
-import { _decorator, assetManager, SpriteFrame } from 'cc';
-const { ccclass, property } = _decorator;
+import { _decorator, assetManager, SpriteFrame, JsonAsset } from 'cc';
+const { ccclass } = _decorator;
 
 /**
  * Asset Bundle完全预加载管理器
@@ -7,14 +7,16 @@ const { ccclass, property } = _decorator;
  */
 @ccclass('PreloadManager')
 export class PreloadManager {
-    
+
     private static _instance: PreloadManager = null;
-    
+
     // 需要预加载的Bundle配置
     private readonly BUNDLES_TO_PRELOAD = [
         { name: 'bg', priority: 1 },
         { name: 'title', priority: 1 },
         { name: 'tiles', priority: 1 },        // 字母瓦片资源，高优先级
+        { name: 'slot', priority: 1 },         // 牌槽背景资源，高优先级（StackGame依赖）
+        { name: 'words', priority: 1 },        // 词库资源，高优先级（核心功能依赖）
         { name: 'modal', priority: 2 }
     ];
     
@@ -22,7 +24,7 @@ export class PreloadManager {
     private readonly ASSETS_TO_PRELOAD = {
         'bg': [
             'main_scene_bg/spriteFrame',
-            'game_scene_bg/spriteFrame', 
+            'game_scene_bg/spriteFrame',
             'result_scene_bg/spriteFrame'
         ],
         'title': [
@@ -34,6 +36,15 @@ export class PreloadManager {
             'tile_highlight/spriteFrame',
             'tile_selectable/spriteFrame',
             'tile_wrong/spriteFrame'
+        ],
+        'slot': [
+            'slot_item/spriteFrame'    // 牌槽背景图
+        ],
+        'words': [
+            'words_core',          // 核心词库（3-7字母）
+            'zh_gloss',            // 核心词义库
+            'words_extended',      // 扩展词库（8-10字母）
+            'zh_gloss_extended'    // 扩展词义库
         ],
         'modal': [
             'pop_card/spriteFrame'
@@ -166,8 +177,11 @@ export class PreloadManager {
      */
     private preloadSingleAsset(bundle: assetManager.Bundle, assetPath: string, bundleName: string): Promise<void> {
         return new Promise<void>((resolve, reject) => {
+            // 判断资源类型（SpriteFrame或JsonAsset）
+            const assetType = assetPath.includes('/spriteFrame') ? SpriteFrame : JsonAsset;
+
             // 使用bundle.load进行完全加载，而不是preload
-            bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+            bundle.load(assetPath, assetType, (err: Error | null, asset: SpriteFrame | JsonAsset) => {
                 if (err) {
                     console.warn(`[PreloadManager] 完全加载资源 ${bundleName}/${assetPath} 失败:`, err);
                     reject(err);

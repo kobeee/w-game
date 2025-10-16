@@ -4,6 +4,8 @@ const { ccclass } = _decorator;
 
 @ccclass('GlossService')
 export class GlossService {
+    private static instance: GlossService | null = null;
+
     private wordBank: any = null;
     private glossDict: Map<string, string> = new Map();
     private sessionNotebook: string[] = [];
@@ -15,35 +17,67 @@ export class GlossService {
     }
 
     /**
-     * 加载词库数据
-     * @param useFull 暂时无效，目前只有一个词库文件
+     * 获取单例实例
      */
-    async load(_useFull: boolean = false): Promise<void> {
-        // 目前只有基础词库，忽略_useFull参数
-        const wordsFile = 'words_core';
-        const glossFile = 'zh_gloss';
+    public static getInstance(): GlossService {
+        if (!GlossService.instance) {
+            GlossService.instance = new GlossService();
+        }
+        return GlossService.instance;
+    }
 
+    /**
+     * 加载词库数据
+     * @param useExtended 是否加载扩展词库（8-10字母长单词）
+     */
+    async load(useExtended: boolean = false): Promise<void> {
         try {
-            // 加载词库数据（从words Bundle）
-            const wordsAsset = await this.loadJsonFromBundle('words', wordsFile);
-            const glossAsset = await this.loadJsonFromBundle('words', glossFile);
+            // 1. 加载核心词库（3-7字母）
+            const coreWordsAsset = await this.loadJsonFromBundle('words', 'words_core');
+            const coreGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss');
 
-            if (wordsAsset && wordsAsset.json) {
-                this.wordBank = wordsAsset.json;
-                console.log('[GlossService] 词库加载成功:', wordsFile);
-                console.log('[GlossService] 词库数据预览:', JSON.stringify(this.wordBank).substring(0, 200) + '...');
+            if (coreWordsAsset && coreWordsAsset.json) {
+                this.wordBank = coreWordsAsset.json;
+                console.log('[GlossService] 核心词库加载成功 (3-7字母)');
             } else {
-                console.error('[GlossService] 词库加载失败或数据为空:', wordsFile);
+                console.error('[GlossService] 核心词库加载失败');
+                return;
             }
 
-            if (glossAsset && glossAsset.json) {
-                this.buildGlossDict(glossAsset.json);
-                console.log('[GlossService] 词义库加载成功:', glossFile);
+            if (coreGlossAsset && coreGlossAsset.json) {
+                this.buildGlossDict(coreGlossAsset.json);
+                console.log('[GlossService] 核心词义库加载成功');
             } else {
-                console.error('[GlossService] 词义库加载失败或数据为空:', glossFile);
+                console.error('[GlossService] 核心词义库加载失败');
             }
 
-            // 初始化生词本
+            // 2. 如果需要，加载扩展词库（8-10字母）
+            if (useExtended) {
+                console.log('[GlossService] 开始加载扩展词库 (8-10字母)...');
+                const extWordsAsset = await this.loadJsonFromBundle('words', 'words_extended');
+                const extGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_extended');
+
+                if (extWordsAsset && extWordsAsset.json) {
+                    // 合并扩展词库到现有词库
+                    this.mergeWordBank(extWordsAsset.json);
+                    console.log('[GlossService] 扩展词库加载成功，已合并');
+                } else {
+                    console.warn('[GlossService] 扩展词库加载失败，将仅使用核心词库');
+                }
+
+                if (extGlossAsset && extGlossAsset.json) {
+                    // 合并扩展词义库
+                    this.mergeGlossDict(extGlossAsset.json);
+                    console.log('[GlossService] 扩展词义库加载成功，已合并');
+                } else {
+                    console.warn('[GlossService] 扩展词义库加载失败');
+                }
+            }
+
+            // 3. 打印最终词库统计
+            this.printWordBankStats();
+
+            // 4. 初始化生词本
             this.loadSessionNotebook();
 
         } catch (error) {
@@ -149,6 +183,31 @@ export class GlossService {
         return this.wordBank;
     }
 
+    /**
+     * 获取所有单词列表（供WordMatcher使用）
+     * @returns 所有单词的字符串数组
+     */
+    getAllWords(): string[] {
+        if (!this.wordBank || !this.wordBank.by_len) {
+            console.warn('[GlossService] 词库未加载或格式错误');
+            return [];
+        }
+
+        const allWords: string[] = [];
+        // 遍历所有长度的单词
+        for (const len in this.wordBank.by_len) {
+            if (this.wordBank.by_len.hasOwnProperty(len)) {
+                const wordsOfLength = this.wordBank.by_len[len];
+                if (Array.isArray(wordsOfLength)) {
+                    allWords.push(...wordsOfLength);
+                }
+            }
+        }
+
+        console.log(`[GlossService] getAllWords返回 ${allWords.length} 个单词`);
+        return allWords;
+    }
+
     private async loadJsonFromBundle(bundleName: string, assetPath: string): Promise<JsonAsset | null> {
         return new Promise((resolve) => {
             console.log(`[GlossService] 尝试从Bundle '${bundleName}' 加载资源: ${assetPath}`);
@@ -192,6 +251,89 @@ export class GlossService {
                 }
             });
         });
+    }
+
+    /**
+     * 合并词库数据（用于扩展词库）
+     * @param additionalBank 要合并的词库数据
+     */
+    private mergeWordBank(additionalBank: any): void {
+        if (!additionalBank || !additionalBank.by_len) {
+            console.warn('[GlossService] 无效的词库数据，跳过合并');
+            return;
+        }
+
+        if (!this.wordBank.by_len) {
+            this.wordBank.by_len = {};
+        }
+
+        // 逐长度合并单词列表
+        for (const len in additionalBank.by_len) {
+            if (additionalBank.by_len.hasOwnProperty(len)) {
+                const words = additionalBank.by_len[len];
+                if (Array.isArray(words)) {
+                    if (!this.wordBank.by_len[len]) {
+                        // 该长度的单词列表不存在，直接赋值
+                        this.wordBank.by_len[len] = words;
+                    } else {
+                        // 该长度的单词列表已存在，合并并去重
+                        const existingWords = this.wordBank.by_len[len];
+                        const mergedWords = [...existingWords, ...words];
+                        // 去重
+                        const uniqueSet = new Set(mergedWords);
+                        this.wordBank.by_len[len] = Array.from(uniqueSet);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 合并词义字典（用于扩展词义库）
+     * @param additionalGloss 要合并的词义数据
+     */
+    private mergeGlossDict(additionalGloss: any): void {
+        if (!additionalGloss || typeof additionalGloss !== 'object') {
+            console.warn('[GlossService] 无效的词义数据，跳过合并');
+            return;
+        }
+
+        for (const key in additionalGloss) {
+            if (additionalGloss.hasOwnProperty(key)) {
+                const value = additionalGloss[key];
+                if (typeof value === 'string') {
+                    // 如果已存在相同的key，会被新值覆盖（可根据需要调整策略）
+                    this.glossDict.set(key.toUpperCase(), value);
+                }
+            }
+        }
+    }
+
+    /**
+     * 打印词库统计信息
+     */
+    private printWordBankStats(): void {
+        if (!this.wordBank || !this.wordBank.by_len) {
+            console.warn('[GlossService] 词库为空或格式错误');
+            return;
+        }
+
+        let totalWords = 0;
+        const stats: string[] = [];
+
+        for (const len in this.wordBank.by_len) {
+            if (this.wordBank.by_len.hasOwnProperty(len)) {
+                const words = this.wordBank.by_len[len];
+                if (Array.isArray(words)) {
+                    totalWords += words.length;
+                    stats.push(`${len}字母: ${words.length}个`);
+                }
+            }
+        }
+
+        console.log(`[GlossService] 词库统计 - 总计: ${totalWords}个单词`);
+        console.log(`[GlossService] 词库明细: ${stats.join(', ')}`);
+        console.log(`[GlossService] 词义数量: ${this.glossDict.size}条`);
     }
 
     private buildGlossDict(glossData: any): void {
