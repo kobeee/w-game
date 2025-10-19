@@ -43,16 +43,30 @@ export class IncrementalWordMatcher implements IWordMatcher {
      * 初始化单词银行
      */
     private initWordBank(): void {
+        console.log('[WordMatcher] ========== 初始化词库 ==========');
+
         // 从GlossService获取词库
-        // 注意：需要确保GlossService已初始化
         const allWords = this.glossService.getAllWords();
+
+        console.log(`[WordMatcher] GlossService.getAllWords() 返回: ${allWords.length} 个单词`);
 
         this.wordBank.clear();
         for (const word of allWords) {
             this.wordBank.add(word.toUpperCase());
         }
 
-        console.log(`[WordMatcher] 初始化词库，共 ${this.wordBank.size} 个单词`);
+        console.log(`[WordMatcher] ✅ 词库初始化完成，共 ${this.wordBank.size} 个单词`);
+
+        if (this.wordBank.size === 0) {
+            console.error('[WordMatcher] ❌ 警告：词库为空！');
+            console.error('[WordMatcher] 可能原因：GlossService 未加载或加载失败');
+        } else {
+            // 打印词库样本（前10个单词）
+            const sample = Array.from(this.wordBank).slice(0, 10);
+            console.log(`[WordMatcher] 词库样本（前10个）: ${sample.join(', ')}`);
+        }
+
+        console.log('[WordMatcher] ========== 词库初始化完成 ==========');
     }
 
     /**

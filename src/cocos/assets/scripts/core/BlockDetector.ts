@@ -3,7 +3,7 @@
  *
  * 核心原理：
  * 1. 卡片以中心点为原点，用横线+竖线划分为4个象限区域
- * 2. 只有相邻的上一层（layer+1）才能遮挡当前层
+ * 2. ✅ 检查所有更高层级（layer > 当前层）的卡片是否遮挡（不仅仅是layer+1）
  * 3. ✅ 遮挡规则：只要4个象限中有任意一个象限被上层卡片遮挡，整个卡片就不可点击！
  * 4. 只有4个象限全部未被遮挡（完全可见），卡片才可以点击！
  *
@@ -18,15 +18,8 @@
  *      │         │         │
  *      └─────────┴─────────┘
  *
- * 上层卡片B遮挡A的8种相对位置（以A中心为原点）：
- * - (0, 0): 完全重合，遮挡全部4个象限 → A不可点击
- * - (-45, 0): 左侧，遮挡象限2+3 → A不可点击
- * - (-45, 45): 左上，遮挡象限2 → A不可点击
- * - (0, 45): 上方，遮挡象限1+2 → A不可点击
- * - (45, 45): 右上，遮挡象限1 → A不可点击
- * - (45, 0): 右侧，遮挡象限1+4 → A不可点击
- * - (45, -45): 右下，遮挡象限4 → A不可点击
- * - (0, -45): 下方，遮挡象限3+4 → A不可点击
+ * 关键说明：多层堆叠场景中，顶层可以跨层遮挡底层（不只是相邻层级）
+ * 示例：Layer 2可以直接遮挡Layer 0，无需通过Layer 1中转
  */
 
 import { Rect, Vec3 } from 'cc';
@@ -144,7 +137,8 @@ export class BlockDetector {
      * 判断卡片是否被遮挡（新算法：4象限法）
      *
      * ✅ 正确规则：只要4个象限中有任意一个被上层卡片遮挡，整个卡片就不可点击！
-     * 注意：只检查相邻的上一层（layer + 1）
+     * ✅ 关键修正：检查所有更高层级的卡片（layer > 当前层），而非仅相邻上层
+     * 原因：多层堆叠场景中，顶层卡片可以跨层直接遮挡底层卡片
      *
      * @param card 待检测卡片
      * @param cards 所有卡片
@@ -155,13 +149,13 @@ export class BlockDetector {
             return true;
         }
 
-        // 找出所有相邻上层的卡片
+        // 找出所有更高层级的卡片（layer > 当前层）
         const upperLayerCards = cards.filter(
-            c => c.layer === card.layer + 1 && !c.removed
+            c => c.layer > card.layer && !c.removed
         );
 
         if (upperLayerCards.length === 0) {
-            return false; // 没有上层卡片，不可能被遮挡
+            return false;
         }
 
         // 检查四个象限
@@ -172,49 +166,25 @@ export class BlockDetector {
             Quadrant.BOTTOM_RIGHT
         ];
 
-        // 统计被遮挡的象限数量
-        let blockedCount = 0;
-        const blockedQuadrants: string[] = [];
-        const visibleQuadrants: string[] = [];
-
+        // 只要任意一个象限被遮挡，卡片就不可点击
         for (const quadrant of quadrants) {
             const quadrantRegion = this.getQuadrantRegion(card, quadrant);
 
-            // 检查这个象限是否被任意上层卡片遮挡（任意重叠都算遮挡）
-            const blockingCard = upperLayerCards.find(upperCard =>
-                this.isQuadrantBlocked(quadrantRegion, upperCard)
-            );
+            // 检查这个象限是否被任意上层卡片遮挡
+            const isQuadrantBlocked = upperLayerCards.some(upperCard => {
+                return this.isQuadrantBlocked(quadrantRegion, upperCard);
+            });
 
-            if (blockingCard) {
-                blockedCount++;
-                blockedQuadrants.push(
-                    `象限${quadrant}被${blockingCard.id}遮挡`
-                );
-            } else {
-                visibleQuadrants.push(`象限${quadrant}可见`);
+            if (isQuadrantBlocked) {
+                return true; // 任意象限被遮挡，卡片就不可点击
             }
         }
 
-        // ✅ 正确逻辑：只要有任意一个象限被遮挡，卡片就不可点击！
-        const isBlocked = blockedCount > 0;
-
-        // 详细调试日志
-        console.log(
-            `[BlockDetector] 卡片${card.id}(${card.letter}) layer=${card.layer} ` +
-            `中心=(${(card.rect.x + card.rect.width/2).toFixed(1)},${(card.rect.y + card.rect.height/2).toFixed(1)}) ` +
-            `遮挡状态: ${isBlocked ? '❌被遮挡' : '✅可点击'} ` +
-            `(${blockedCount}/4象限被遮挡)\n` +
-            `  已遮挡: ${blockedQuadrants.length > 0 ? blockedQuadrants.join(', ') : '无'}\n` +
-            `  可见: ${visibleQuadrants.join(', ')}`
-        );
-
-        return isBlocked;
+        return false;
     }
 
     /**
      * 批量更新所有卡片的遮挡状态（使用新的十字区域法）
-     *
-     * 时间复杂度: O(n) - n为卡片总数（只检查相邻层级）
      *
      * @param cards 所有卡片
      */
@@ -226,19 +196,12 @@ export class BlockDetector {
             }
         }
 
-        // 使用新的十字区域法更新遮挡状态
-        console.log('\n[BlockDetector] ========== 开始批量遮挡判定 ==========');
+        // 更新遮挡状态
         for (const card of cards) {
             if (!card.removed) {
                 card.blocked = this.isCardBlocked(card, cards);
             }
         }
-
-        // 统计可点击卡片数量
-        const clickableCount = cards.filter(c => !c.blocked && !c.removed).length;
-        const totalCount = cards.filter(c => !c.removed).length;
-        console.log(`\n[BlockDetector] ========== 遮挡判定完成 ==========`);
-        console.log(`[BlockDetector] 可点击卡片: ${clickableCount}/${totalCount}`);
     }
 
     /**

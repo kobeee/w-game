@@ -88,14 +88,29 @@ export class LoadingUI extends Component {
             // 执行预加载
             await this.preloadManager.preloadAllBundles();
 
-            // Bundle加载完成后，初始化GlossService
-            console.log('[LoadingUI] Bundle预加载完成，开始初始化词库...');
-            this.updateStatus(0.85, '正在初始化词库系统...');
+            // PreloadManager已在preloadAllBundles()中加载词库，无需重复
+            console.log('[LoadingUI] Bundle预加载完成，词库已随Bundle一起加载');
+            this.updateStatus(0.9, 'Bundle和词库加载完成');
 
+            // 验证词库是否加载成功
             const glossService = GlossService.getInstance();
-            await glossService.load(true); // 加载扩展词库（8-10字母，用于堆叠模式）
+            const allWords = glossService.getAllWords();
 
-            console.log('[LoadingUI] 词库初始化完成');
+            if (allWords.length === 0) {
+                console.error('[LoadingUI] ⚠️ 词库未加载，尝试手动加载...');
+                this.updateStatus(0.95, '正在修复词库加载...');
+
+                await glossService.load(false); // 仅加载核心词库
+
+                const retryWords = glossService.getAllWords();
+                if (retryWords.length > 0) {
+                    console.log(`[LoadingUI] ✅ 词库修复成功，共 ${retryWords.length} 个单词`);
+                } else {
+                    console.error('[LoadingUI] ❌ 词库修复失败，游戏可能无法正常运行');
+                }
+            }
+
+            console.log('[LoadingUI] 所有资源加载完成');
             this.updateStatus(1.0, '所有资源加载完成！');
 
             // 加载完成，延迟一下再跳转

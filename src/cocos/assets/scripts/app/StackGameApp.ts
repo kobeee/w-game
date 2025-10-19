@@ -54,11 +54,33 @@ export class StackGameApp extends Component {
     private startTime: number = 0;
 
     protected async onLoad(): Promise<void> {
-        // 初始化单词匹配器（确保GlossService已加载完成）
-        this.initWordMatcher();
+        // 降级方案：如果词库未加载（直接预览Game场景时），执行加载
+        const glossService = GlossService.getInstance();
+        const loadStatus = glossService.getLoadStatus();
+
+        if (!loadStatus.core) {
+            console.warn('[StackGameApp] ⚠️ 词库未加载，执行降级加载...');
+            try {
+                await glossService.load(false); // 仅加载核心词库
+                console.log('[StackGameApp] ✅ 词库降级加载完成');
+            } catch (error) {
+                console.error('[StackGameApp] ❌ 词库降级加载失败:', error);
+            }
+        }
+
+        // ✅ 延迟初始化单词匹配器到 startGame()（此时GlossService已加载完成）
+        // this.initWordMatcher();
 
         // 加载远程资源
         await this.loadRemoteAssets();
+
+        // ✅ 修复：确保SlotQueue容器始终在最上层，避免遮挡飞行中的卡片
+        if (this.slotQueue && this.slotQueue.node) {
+            this.slotQueue.node.setSiblingIndex(9998); // SlotQueue在底层
+        }
+        if (this.stackBoard && this.stackBoard.node) {
+            this.stackBoard.node.setSiblingIndex(9999); // StackBoard在最上层
+        }
 
         // 注册堆叠棋盘事件
         if (this.stackBoard) {
@@ -81,7 +103,25 @@ export class StackGameApp extends Component {
         }
     }
 
-    protected start(): void {
+    protected async start(): Promise<void> {
+        // ✅ 确保词库加载完成后再开始游戏
+        const glossService = GlossService.getInstance();
+
+        console.log('[StackGameApp] start() 开始，等待词库加载完成...');
+
+        // ⚠️ 关键：无论 onLoad() 中是否已经开始加载，这里都再次调用 load()
+        // load() 方法内部会处理并发控制，如果已经在加载，会等待完成
+        try {
+            await glossService.load(false);
+            console.log('[StackGameApp] start() 词库加载完成');
+        } catch (error) {
+            console.error('[StackGameApp] start() 词库加载失败:', error);
+        }
+
+        // 最终验证
+        const loadStatus = glossService.getLoadStatus();
+        console.log(`[StackGameApp] start() 最终状态检查: 核心=${loadStatus.core}, 扩展=${loadStatus.extended}`);
+
         this.startGame();
     }
 
@@ -93,14 +133,29 @@ export class StackGameApp extends Component {
         try {
             const glossService = GlossService.getInstance();
 
-            // ✅ 使用完整词库初始化WordMatcher
-            // 这样玩家拼出任何有效单词都能消除
+            // 检查词库是否已加载
+            let allWords = glossService.getAllWords();
+
+            console.log(`[StackGameApp] GlossService.getAllWords() 返回: ${allWords.length} 个单词`);
+
+            if (allWords.length === 0) {
+                console.warn('[StackGameApp] ⚠️ 词库为空，检查加载状态');
+
+                const loadStatus = glossService.getLoadStatus();
+                console.log(`[StackGameApp] 加载状态: 核心=${loadStatus.core}, 扩展=${loadStatus.extended}`);
+
+                if (!loadStatus.core) {
+                    console.error('[StackGameApp] ❌ 核心词库未加载，WordMatcher 初始化失败');
+                }
+            }
+
+            // 使用完整词库初始化WordMatcher
             this.wordMatcher = new IncrementalWordMatcher(glossService);
 
-            console.log('[StackGameApp] 单词匹配器初始化完成（支持完整词库验证）');
+            console.log(`[StackGameApp] ✅ 单词匹配器初始化完成，词库单词数: ${allWords.length}`);
 
         } catch (error) {
-            console.error('[StackGameApp] 单词匹配器初始化失败:', error);
+            console.error('[StackGameApp] ❌ 单词匹配器初始化失败:', error);
             // 降级方案：创建一个默认的匹配器
             this.wordMatcher = new IncrementalWordMatcher();
         }
@@ -117,6 +172,11 @@ export class StackGameApp extends Component {
         useGridLayout: boolean = true,
         layoutPath: string = 'layouts/pyramid_default'
     ): Promise<void> {
+        // ✅ 在游戏真正开始时初始化WordMatcher（此时GlossService已加载）
+        if (!this.wordMatcher) {
+            this.initWordMatcher();
+        }
+
         const dailySeed = seed || LevelGenerator.getDailySeed();
         console.log(`[StackGameApp] 生成每日关卡，种子: ${dailySeed}`);
 
@@ -232,16 +292,24 @@ export class StackGameApp extends Component {
     private onLetterAdded(letters: string[]): void {
         console.log(`[StackGameApp] 字母添加到牌槽: ${letters.join('')}`);
 
-        // 检测单词
+        // ✅ 防御性检查：WordMatcher是否存在
         if (!this.wordMatcher) {
-            console.warn('[StackGameApp] WordMatcher未初始化');
-            return;
+            console.warn('[StackGameApp] ⚠️ WordMatcher 未初始化，尝试重新初始化');
+            this.initWordMatcher();
+
+            // 再次检查
+            if (!this.wordMatcher) {
+                console.error('[StackGameApp] ❌ WordMatcher 初始化失败，无法检测单词');
+                return;
+            }
         }
 
+        // ✅ 检测单词
         const match = this.wordMatcher.findWord(letters);
 
         if (match) {
             console.log(`[StackGameApp] ✅ 检测到有效单词: ${match.word}（完整词库验证）`);
+            console.log(`[StackGameApp] 单词详情: 长度=${match.length}, 起始索引=${match.startIdx}, 结束索引=${match.endIdx}`);
 
             // 保存当前匹配
             this.currentMatch = match;
@@ -251,6 +319,8 @@ export class StackGameApp extends Component {
 
             // 触发闪烁动画
             this.slotQueue.startBlink(match);
+        } else {
+            console.log(`[StackGameApp] ℹ️ 未检测到有效单词: ${letters.join('')}`);
         }
     }
 
@@ -352,16 +422,26 @@ export class StackGameApp extends Component {
      * 显示词义（Bottom Sheet）
      */
     private async showWordMeaning(word: string): Promise<void> {
+        console.log(`[StackGameApp] ========== 查询词义 ==========`);
+        console.log(`[StackGameApp] 单词: ${word}`);
+
         try {
             const glossService = GlossService.getInstance();
-            const gloss = await glossService.getGloss(word);
 
-            if (gloss && gloss.cn) {
-                console.log(`[StackGameApp] ${word}: ${gloss.cn}`);
+            // ✅ 修复：使用正确的方法名 explain()
+            const cnMeaning = glossService.explain(word);
+
+            console.log(`[StackGameApp] 查询结果:`, cnMeaning);
+
+            if (cnMeaning) {
+                console.log(`[StackGameApp] ${word}: ${cnMeaning}`);
                 // TODO: 显示词义浮层（需要GlossSheet组件）
+                // 可以调用 GlossSheet 显示词义
+            } else {
+                console.warn(`[StackGameApp] ⚠️ 未找到词义: ${word}`);
             }
         } catch (error) {
-            console.warn(`[StackGameApp] 查询词义失败: ${word}`, error);
+            console.error(`[StackGameApp] ❌ 查询词义失败: ${word}`, error);
         }
     }
 

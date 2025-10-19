@@ -2,6 +2,7 @@ import { _decorator, Component, Node, Prefab, instantiate, Vec3, tween, UITransf
 import { Card, Level } from '../data/StackTypes';
 import { BlockDetector } from '../core/BlockDetector';
 import { LetterTile } from './LetterTile';
+import { SlotQueue } from './SlotQueue';
 
 const { ccclass, property } = _decorator;
 
@@ -17,8 +18,27 @@ export class StackBoard extends Component {
     @property(Node)
     public container: Node = null!;
 
+    // ✅ 新增：SlotQueue组件引用（用于获取当前缩放比例）
+    private slotQueue: SlotQueue | null = null;
+
     private cards: Card[] = [];
     private tileNodes: Map<string, Node> = new Map();
+
+    /**
+     * ✅ 新增：在onLoad中初始化SlotQueue引用
+     */
+    protected onLoad(): void {
+        // 假设SlotQueue与StackBoard在同一父节点下
+        const parent = this.node.parent;
+        if (parent) {
+            this.slotQueue = parent.getComponentInChildren(SlotQueue);
+            if (this.slotQueue) {
+                console.log('[StackBoard] 成功获取SlotQueue组件引用');
+            } else {
+                console.warn('[StackBoard] 未找到SlotQueue组件，飞行缩放将使用默认值1.0');
+            }
+        }
+    }
 
     /**
      * 初始化棋盘
@@ -27,19 +47,18 @@ export class StackBoard extends Component {
         this.clear();
         this.cards = [...level.cards];
 
-        // ✅ 确保container节点位置为(0,0,0) - 世界坐标中心
         this.container.setPosition(0, 0, 0);
-        console.log('[StackBoard] ✅ 设置container位置为(0, 0, 0)');
 
         // 创建所有卡片节点
         for (const card of this.cards) {
             this.createTileNode(card);
         }
 
-        // 所有卡片节点创建完成后，更新rect并计算遮挡状态
-        this.updateCardRects();
+        // 所有卡片节点创建完成后，统一按layer排序设置sibling index
+        this.reorderTilesByLayer();
 
-        // 更新遮挡状态
+        // 更新rect并计算遮挡状态
+        this.updateCardRects();
         this.updateBlockStatus();
     }
 
@@ -49,30 +68,33 @@ export class StackBoard extends Component {
      */
     private updateCardRects(): void {
         for (const card of this.cards) {
-            const tileNode = this.tileNodes.get(card.id);
-            if (!tileNode) continue;
+            if (!this.tileNodes.get(card.id)) continue;
 
-            // ✅ 卡片的位置已经是由布局生成器计算的世界坐标
-            // ❌ 不要使用 convertToWorldSpaceAR()，它会经过Canvas的变换，产生浮点误差
-            // 直接使用 card.position 即可（这已经是准确的世界坐标）
             const worldPos = card.position;
-
-            // 标准卡片尺寸
             const cardWidth = 90;
             const cardHeight = 90;
 
-            // 更新card.rect为世界坐标矩形
-            // rect.x 和 rect.y 是左下角坐标（Cocos坐标系Y轴向上）
             card.rect.x = worldPos.x - cardWidth / 2;
             card.rect.y = worldPos.y - cardHeight / 2;
             card.rect.width = cardWidth;
             card.rect.height = cardHeight;
+        }
+    }
 
-            console.log(
-                `[StackBoard] 更新卡片${card.id}的rect: ` +
-                `世界坐标(${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)}), ` +
-                `rect(${card.rect.x.toFixed(2)}, ${card.rect.y.toFixed(2)}, ${card.rect.width}, ${card.rect.height})`
-            );
+    /**
+     * 按层级重新排序卡片的渲染顺序
+     * 确保Layer 0在最底层，Layer 1在中层，Layer 2在最上层
+     */
+    private reorderTilesByLayer(): void {
+        // 按layer排序，然后为每张卡片分配唯一的siblingIndex
+        const sortedCards = [...this.cards].sort((a, b) => a.layer - b.layer);
+
+        for (let i = 0; i < sortedCards.length; i++) {
+            const card = sortedCards[i];
+            const tileNode = this.tileNodes.get(card.id);
+            if (tileNode) {
+                tileNode.setSiblingIndex(i);
+            }
         }
     }
 
@@ -94,24 +116,18 @@ export class StackBoard extends Component {
             return;
         }
 
-        // 设置字母
         tile.setChar(card.letter);
-
-        // 设置位置
         tileNode.setPosition(card.position);
 
-        // 设置渲染层级（层级越高，z-index越大）
-        tileNode.setSiblingIndex(card.layer);
-
-        // 添加到容器
+        // 添加到容器（sibling index将在reorderTilesByLayer中统一设置）
         this.container.addChild(tileNode);
 
-        // 注册点击事件
-        tileNode.on(Node.EventType.TOUCH_END, () => {
+        // ✅ 修复：监听LetterTile发射的自定义事件，而非直接监听TOUCH_END
+        tileNode.on('tile:clicked', (letterTile: LetterTile) => {
+            console.log(`[StackBoard] 接收到tile:clicked事件, 卡片ID: ${card.id}`);
             this.onTileClick(card.id);
         }, this);
 
-        // 保存引用
         this.tileNodes.set(card.id, tileNode);
     }
 
@@ -119,10 +135,8 @@ export class StackBoard extends Component {
      * 更新所有卡片的遮挡状态
      */
     public updateBlockStatus(): void {
-        // 使用BlockDetector静态方法计算遮挡关系
         BlockDetector.updateAllBlockStatus(this.cards);
 
-        // 更新UI显示
         for (const card of this.cards) {
             const tileNode = this.tileNodes.get(card.id);
             if (!tileNode) continue;
@@ -131,13 +145,10 @@ export class StackBoard extends Component {
             if (!tile) continue;
 
             if (card.removed) {
-                // 已移除的卡片不显示
                 tileNode.active = false;
             } else if (card.blocked) {
-                // 被遮挡的卡片显示为不可选择
                 tile.setState('disabled');
             } else {
-                // 可点击的卡片
                 tile.setState('selectable');
             }
         }
@@ -192,13 +203,26 @@ export class StackBoard extends Component {
         // 标记为已移除
         card.removed = true;
 
+        // ✅ 新增：提升z-index确保飞行时在最上层
+        // 临时提升siblingIndex到最大值，确保飞行中的卡片不被任何节点遮挡
+        const originalIndex = tileNode.getSiblingIndex();
+        tileNode.setSiblingIndex(9999);
+        console.log(`[StackBoard] 卡片${cardId}飞行开始，siblingIndex从${originalIndex}提升至9999`);
+
+        // ✅ 新增：获取目标slot的缩放比例
+        const targetScale = this.slotQueue ? this.slotQueue.getCurrentScale() : 1.0;
+
+        console.log(`[StackBoard] 卡片${cardId}飞行目标缩放：${targetScale}`);
+
         // 飞向牌槽动画
         return new Promise<Node>((resolve) => {
             tween(tileNode)
-                .to(0.1, { scale: new Vec3(0.8, 0.8, 1) })
+                .to(0.1, { scale: new Vec3(targetScale, targetScale, 1) }) // ✅ 使用动态缩放
                 .to(0.3, { position: targetPos }, { easing: 'cubicOut' })
                 .call(() => {
-                    // ✅ 不再隐藏节点，而是返回给调用方处理
+                    // ✅ 注释：不需要恢复originalIndex，因为节点即将被转移到SlotQueue
+                    // tileNode.setSiblingIndex(originalIndex);
+
                     console.log(`[StackBoard] 卡片${cardId}飞行动画完成，返回节点`);
 
                     // 从映射表中移除（因为节点将被转移到SlotQueue）
@@ -221,7 +245,8 @@ export class StackBoard extends Component {
         // 销毁所有瓦片节点
         for (const [, tileNode] of this.tileNodes) {
             if (tileNode && tileNode.isValid) {
-                tileNode.off(Node.EventType.TOUCH_END);
+                // ✅ 修复：取消自定义事件监听，而非TOUCH_END
+                tileNode.off('tile:clicked');
                 tileNode.destroy();
             }
         }

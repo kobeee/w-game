@@ -1,4 +1,6 @@
 import { _decorator, assetManager, SpriteFrame, JsonAsset } from 'cc';
+import { GlossService } from '../data/GlossService';
+
 const { ccclass } = _decorator;
 
 /**
@@ -75,26 +77,77 @@ export class PreloadManager {
     public async preloadAllBundles(): Promise<void> {
         console.log('[PreloadManager] 开始完全加载所有Asset Bundle（包括反序列化和初始化）...');
         this.reportProgress(0, '正在初始化完全资源加载...');
-        
+
         try {
             // 按优先级分组
             const highPriorityBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.priority === 1);
             const lowPriorityBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.priority === 2);
-            
+
             // 高优先级Bundle并行加载
             await this.preloadBundleGroup(highPriorityBundles, 0, 0.7);
-            
+
+            // ✅ 加载词库数据（确保WordMatcher初始化前完成）
+            await this.loadGlossData();
+
             // 低优先级Bundle后续加载
             await this.preloadBundleGroup(lowPriorityBundles, 0.7, 1.0);
-            
+
             this.reportProgress(1.0, '所有资源完全加载完成，立即可用');
             console.log('[PreloadManager] 🎉 所有Bundle完全加载完成，资源立即可用');
-            
+
         } catch (error) {
             console.error('[PreloadManager] Bundle完全加载失败:', error);
             this.reportProgress(0.8, '资源加载完成（部分资源使用缓存）');
             // 不抛出错误，允许游戏继续运行
         }
+    }
+
+    /**
+     * 加载词库数据（确保WordMatcher初始化前完成）
+     * @param useExtended 是否加载扩展词库（默认true，一次性加载全部）
+     */
+    private async loadGlossData(useExtended: boolean = true): Promise<void> {
+        console.log('[PreloadManager] ===== 词库加载启动 =====');
+        console.log(`[PreloadManager] 加载模式: ${useExtended ? '核心+扩展' : '仅核心'}`);
+
+        try {
+            // 检查 Bundle 是否已加载
+            const wordsBundle = assetManager.getBundle('words');
+            if (!wordsBundle) {
+                console.error('[PreloadManager] ❌ 严重错误：words Bundle 未加载！');
+                console.error('[PreloadManager] PreloadManager.preloadAllBundles() 应该已加载 words Bundle');
+                return;
+            }
+            console.log('[PreloadManager] ✅ words Bundle 已加载');
+
+            // 直接调用 GlossService（不使用动态import）
+            const glossService = GlossService.getInstance();
+            console.log(`[PreloadManager] 初始状态: 核心=${glossService.getLoadStatus().core}, 扩展=${glossService.getLoadStatus().extended}`);
+
+            // 一次性加载核心+扩展词库（避免二次加载）
+            console.log('[PreloadManager] 开始调用 GlossService.load()...');
+            await glossService.load(useExtended);
+
+            const allWords = glossService.getAllWords();
+            const loadStatus = glossService.getLoadStatus();
+
+            console.log(`[PreloadManager] ✅ 词库数据加载完成`);
+            console.log(`[PreloadManager] 单词数: ${allWords.length}`);
+            console.log(`[PreloadManager] 加载状态: 核心=${loadStatus.core}, 扩展=${loadStatus.extended}`);
+
+            if (allWords.length === 0) {
+                console.error('[PreloadManager] ❌ 词库为空！');
+                console.error('[PreloadManager] 检查项:');
+                console.error('[PreloadManager]   1. words_core.json 是否存在');
+                console.error('[PreloadManager]   2. words_core.json 是否能被 GlossService.loadJsonFromBundle 访问');
+                console.error('[PreloadManager]   3. words_core.json 的 JSON 结构是否正确');
+            }
+
+        } catch (error) {
+            console.error('[PreloadManager] ❌ 词库数据加载失败:', error);
+            console.error('[PreloadManager] 错误堆栈:', error instanceof Error ? error.stack : '');
+        }
+        console.log('[PreloadManager] ===== 词库加载完成 =====');
     }
     
     /**
@@ -120,28 +173,41 @@ export class PreloadManager {
      */
     private async preloadSingleBundle(bundleName: string, startProgress: number, endProgress: number): Promise<void> {
         return new Promise<void>((resolve, reject) => {
+            console.log(`[PreloadManager.preloadSingleBundle] 开始加载Bundle: ${bundleName}`);
             this.reportProgress(startProgress, `正在加载 ${bundleName} 资源包...`);
-            
+
             // 首先加载Bundle
             assetManager.loadBundle(bundleName, (err, bundle) => {
                 if (err) {
-                    console.warn(`[PreloadManager] Bundle '${bundleName}' 加载失败，跳过:`, err);
+                    console.error(`[PreloadManager.preloadSingleBundle] ❌ Bundle '${bundleName}' 加载失败:`, err);
                     this.reportProgress(endProgress, `${bundleName} 资源包加载失败，将使用缓存`);
                     resolve(); // 继续加载其他Bundle
                     return;
                 }
-                
-                console.log(`[PreloadManager] Bundle '${bundleName}' 加载成功`);
+
+                console.log(`[PreloadManager.preloadSingleBundle] ✅ Bundle '${bundleName}' 加载成功`);
                 this.loadedBundles.set(bundleName, bundle);
-                
+
+                // 验证Bundle是否在官方缓存中
+                const cachedBundle = assetManager.getBundle(bundleName);
+                if (!cachedBundle) {
+                    console.error(`[PreloadManager.preloadSingleBundle] ⚠️ Bundle '${bundleName}' 加载成功但未在缓存中！`);
+                }
+
                 // Bundle加载占50%进度
                 const midProgress = startProgress + (endProgress - startProgress) * 0.5;
                 this.reportProgress(midProgress, `正在预加载 ${bundleName} 内部资源...`);
-                
+
                 // 预加载Bundle内的关键资源
                 this.preloadBundleAssets(bundle, bundleName, midProgress, endProgress)
-                    .then(() => resolve())
-                    .catch(() => resolve()); // 即使资源预加载失败也继续
+                    .then(() => {
+                        console.log(`[PreloadManager.preloadSingleBundle] ✅ Bundle '${bundleName}' 和内部资源加载完成`);
+                        resolve();
+                    })
+                    .catch((error) => {
+                        console.error(`[PreloadManager.preloadSingleBundle] ⚠️ Bundle '${bundleName}' 资源预加载失败，但继续:`, error);
+                        resolve();
+                    });
             });
         });
     }

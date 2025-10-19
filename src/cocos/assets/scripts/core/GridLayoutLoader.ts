@@ -138,9 +138,7 @@ export class GridLayoutLoader {
         }
 
         // 生成字母池（从单词池中提取所有字母）
-        console.log(`[GridLayoutLoader] 开始生成字母池，输入单词数: ${words ? words.length : 0}`);
         const letterPool = this.generateLetterPool(words);
-        console.log(`[GridLayoutLoader] 字母池生成完成，字母总数: ${letterPool.length}`);
 
         // 转换卡片配置为Card实例
         const cards: Card[] = config.cards.map((cardConfig, index) => {
@@ -215,12 +213,6 @@ export class GridLayoutLoader {
             GRID_UNIT               // 高度
         );
 
-        console.log(
-            `[GridLayoutLoader] 卡片${index}: ${letter} @ grid(${cardConfig.gridRow},${cardConfig.gridCol}), ` +
-            `层=${cardConfig.layer}, ` +
-            `位置=${position.x.toFixed(2)},${position.y.toFixed(2)}, ` +
-            `rect=${rect.x.toFixed(2)},${rect.y.toFixed(2)}-${(rect.x + rect.width).toFixed(2)},${(rect.y + rect.height).toFixed(2)}`
-        );
 
         return {
             id: `card_${index}`,

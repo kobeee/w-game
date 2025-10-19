@@ -448,36 +448,51 @@ function calculateZIndex(layer: number): number {
 
 ### 7.1 复用现有算法
 
-本方案**完全复用** `BlockDetector.ts` 中已实现的十字区域遮挡判定算法,无需修改。
+本方案**完全复用** `BlockDetector.ts` 中已实现的十字区域遮挡判定算法。
 
-**现有算法核心逻辑**:
+**⚠️ 关键修正（v1.1版本更新）**:
+
+| 观点 | 错误说法 | 正确说法 |
+|-----|--------|--------|
+| **层级检查** | ❌ 只检查相邻上层（layer+1） | ✅ 检查所有更高层级（layer > 当前层） |
+| **原因** | - | 多层堆叠时，顶层可跨层遮挡底层 |
+| **示例** | Layer 1检查Layer 0？ | Layer 2可直接遮挡Layer 0 |
+
+**修正后的算法核心逻辑**:
 
 ```typescript
-// 已有代码 (BlockDetector.ts)
-static isCardBlocked(card: Card, upperCards: Card[]): boolean {
-    for (const direction of [
-        CrossDirection.TOP,
-        CrossDirection.BOTTOM,
-        CrossDirection.LEFT,
-        CrossDirection.RIGHT
-    ]) {
-        const crossRegion = this.getCrossRegion(card, direction);
-        let isThisDirectionBlocked = false;
+static isCardBlocked(card: Card, cards: Card[]): boolean {
+    if (card.removed) {
+        return true;
+    }
 
-        for (const upperCard of upperCards) {
-            if (this.isCrossRegionBlocked(crossRegion, upperCard)) {
-                isThisDirectionBlocked = true;
-                break;
-            }
-        }
+    // ✅ 关键修正：找出所有更高层级的卡片（layer > 当前层）
+    const upperLayerCards = cards.filter(
+        c => c.layer > card.layer && !c.removed
+    );
 
-        // 只要有一个十字区域未被遮挡,卡片就可点击
-        if (!isThisDirectionBlocked) {
-            return false;
+    if (upperLayerCards.length === 0) {
+        return false;
+    }
+
+    // 检查四个象限是否被遮挡
+    const quadrants = [TOP_RIGHT, TOP_LEFT, BOTTOM_LEFT, BOTTOM_RIGHT];
+
+    for (const quadrant of quadrants) {
+        const quadrantRegion = this.getQuadrantRegion(card, quadrant);
+
+        // 检查这个象限是否被任意上层卡片遮挡
+        const isBlockedByAny = upperLayerCards.some(upperCard =>
+            this.isQuadrantBlocked(quadrantRegion, upperCard)
+        );
+
+        // ✅ 只要有一个象限被遮挡，卡片就不可点击
+        if (isBlockedByAny) {
+            return true;
         }
     }
 
-    return true; // 所有十字区域都被遮挡
+    return false; // 所有象限都未被遮挡，卡片可点击
 }
 ```
 

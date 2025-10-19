@@ -1,4 +1,4 @@
-import { _decorator, JsonAsset, resources, sys, assetManager } from 'cc';
+import { _decorator, JsonAsset, sys, assetManager, TextAsset } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -9,6 +9,11 @@ export class GlossService {
     private wordBank: any = null;
     private glossDict: Map<string, string> = new Map();
     private sessionNotebook: string[] = [];
+
+    // 加载状态标记
+    private isCoreLoaded: boolean = false;      // 核心词库是否已加载
+    private isExtendedLoaded: boolean = false;  // 扩展词库是否已加载
+    private loadingPromise: Promise<void> | null = null; // 正在加载的Promise（防止并发）
 
     constructor() {
         console.log('[GlossService] 构造函数，初始化sessionNotebook为空数组');
@@ -27,61 +32,146 @@ export class GlossService {
     }
 
     /**
-     * 加载词库数据
-     * @param useExtended 是否加载扩展词库（8-10字母长单词）
+     * 加载词库（幂等操作，多次调用不会重复加载）
+     * @param useExtended 是否加载扩展词库（8-10字母）
      */
     async load(useExtended: boolean = false): Promise<void> {
-        try {
-            // 1. 加载核心词库（3-7字母）
-            const coreWordsAsset = await this.loadJsonFromBundle('words', 'words_core');
-            const coreGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss');
+        // 如果正在加载中，等待之前的加载完成
+        if (this.loadingPromise) {
+            console.log('[GlossService] 词库正在加载中，等待之前的加载完成...');
+            await this.loadingPromise;
 
-            if (coreWordsAsset && coreWordsAsset.json) {
-                this.wordBank = coreWordsAsset.json;
-                console.log('[GlossService] 核心词库加载成功 (3-7字母)');
+            // 检查是否需要加载扩展词库
+            if (useExtended && !this.isExtendedLoaded) {
+                console.log('[GlossService] 核心词库已加载，继续加载扩展词库...');
+                // 继续执行后续逻辑
             } else {
-                console.error('[GlossService] 核心词库加载失败');
+                console.log('[GlossService] 词库已加载，跳过重复加载');
                 return;
             }
+        }
 
-            if (coreGlossAsset && coreGlossAsset.json) {
-                this.buildGlossDict(coreGlossAsset.json);
-                console.log('[GlossService] 核心词义库加载成功');
+        // 如果核心词库已加载且不需要扩展词库，直接返回
+        if (this.isCoreLoaded && !useExtended) {
+            console.log('[GlossService] 核心词库已加载，跳过');
+            return;
+        }
+
+        // 如果核心和扩展词库都已加载，直接返回
+        if (this.isCoreLoaded && this.isExtendedLoaded) {
+            console.log('[GlossService] 核心+扩展词库已全部加载，跳过');
+            return;
+        }
+
+        // 创建加载Promise（防止并发加载）
+        this.loadingPromise = this.performLoad(useExtended);
+
+        try {
+            await this.loadingPromise;
+        } finally {
+            this.loadingPromise = null;
+        }
+    }
+
+    /**
+     * 执行实际的加载操作
+     * @private
+     */
+    private async performLoad(useExtended: boolean): Promise<void> {
+        console.log('[GlossService] ========== 开始加载词库 ==========');
+        console.log(`[GlossService] 扩展词库: ${useExtended ? '是' : '否'}`);
+        console.log(`[GlossService] 当前状态: 核心=${this.isCoreLoaded}, 扩展=${this.isExtendedLoaded}`);
+
+        try {
+            // 步骤1：加载核心词库（仅在未加载时）
+            if (!this.isCoreLoaded) {
+                console.log('[GlossService] 步骤1：加载核心词库（3-7字母）');
+                const coreWordsAsset = await this.loadJsonFromBundle('words', 'words_core');
+                const coreGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss');
+
+                // ✅ 调试：检查 coreWordsAsset 的完整结构
+                console.log('[GlossService] coreWordsAsset 对象:', coreWordsAsset);
+                console.log('[GlossService] coreWordsAsset 类型:', typeof coreWordsAsset);
+
+                // ✅ 兼容性处理：有些情况下 JSON 数据可能直接在 asset 对象中
+                let jsonData = null;
+                if (coreWordsAsset) {
+                    if (coreWordsAsset.json) {
+                        jsonData = coreWordsAsset.json;
+                        console.log('[GlossService] 使用 asset.json 获取数据');
+                    } else if ((coreWordsAsset as any)._nativeAsset) {
+                        jsonData = (coreWordsAsset as any)._nativeAsset;
+                        console.log('[GlossService] 使用 asset._nativeAsset 获取数据');
+                    } else if (typeof coreWordsAsset === 'object' && (coreWordsAsset as any).by_len) {
+                        jsonData = coreWordsAsset;
+                        console.log('[GlossService] 直接使用 asset 对象作为数据');
+                    }
+                }
+
+                console.log('[GlossService] 最终提取的 jsonData:', jsonData ? Object.keys(jsonData).slice(0, 3) : 'null');
+
+                if (jsonData && jsonData.by_len) {
+                    this.wordBank = jsonData;
+                    this.isCoreLoaded = true; // 标记已加载
+                    console.log('[GlossService] ✅ 核心词库加载成功');
+                    console.log('[GlossService] wordBank结构:', Object.keys(this.wordBank));
+                    console.log('[GlossService] by_len键:', Object.keys(this.wordBank.by_len || {}));
+                } else {
+                    console.error('[GlossService] ❌ 核心词库加载失败');
+                    console.error('[GlossService] coreWordsAsset 为:', coreWordsAsset);
+                    console.error('[GlossService] 提取的 jsonData 为:', jsonData);
+                    return;
+                }
+
+                if (coreGlossAsset && coreGlossAsset.json) {
+                    this.buildGlossDict(coreGlossAsset.json);
+                    console.log('[GlossService] ✅ 核心词义库加载成功');
+                } else {
+                    console.error('[GlossService] ❌ 核心词义库加载失败');
+                }
             } else {
-                console.error('[GlossService] 核心词义库加载失败');
+                console.log('[GlossService] ℹ️ 核心词库已存在，跳过加载');
             }
 
-            // 2. 如果需要，加载扩展词库（8-10字母）
-            if (useExtended) {
-                console.log('[GlossService] 开始加载扩展词库 (8-10字母)...');
+            // 步骤2：如果需要且未加载，加载扩展词库（8-10字母）
+            if (useExtended && !this.isExtendedLoaded) {
+                console.log('[GlossService] 步骤2：加载扩展词库 (8-10字母)...');
                 const extWordsAsset = await this.loadJsonFromBundle('words', 'words_extended');
                 const extGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_extended');
 
                 if (extWordsAsset && extWordsAsset.json) {
                     // 合并扩展词库到现有词库
                     this.mergeWordBank(extWordsAsset.json);
-                    console.log('[GlossService] 扩展词库加载成功，已合并');
+                    this.isExtendedLoaded = true; // 标记已加载
+                    console.log('[GlossService] ✅ 扩展词库加载成功，已合并');
                 } else {
-                    console.warn('[GlossService] 扩展词库加载失败，将仅使用核心词库');
+                    console.warn('[GlossService] ⚠️ 扩展词库加载失败，将仅使用核心词库');
                 }
 
                 if (extGlossAsset && extGlossAsset.json) {
                     // 合并扩展词义库
                     this.mergeGlossDict(extGlossAsset.json);
-                    console.log('[GlossService] 扩展词义库加载成功，已合并');
+                    console.log('[GlossService] ✅ 扩展词义库加载成功，已合并');
                 } else {
-                    console.warn('[GlossService] 扩展词义库加载失败');
+                    console.warn('[GlossService] ⚠️ 扩展词义库加载失败');
                 }
+            } else if (useExtended && this.isExtendedLoaded) {
+                console.log('[GlossService] ℹ️ 扩展词库已存在，跳过加载');
             }
 
-            // 3. 打印最终词库统计
+            // 步骤3：打印最终词库统计
             this.printWordBankStats();
 
-            // 4. 初始化生词本
-            this.loadSessionNotebook();
+            // 步骤4：初始化生词本（仅第一次加载时）
+            if (this.isCoreLoaded && !this.isExtendedLoaded) {
+                this.loadSessionNotebook();
+            }
+
+            console.log('[GlossService] ========== 词库加载完成 ==========');
+            console.log(`[GlossService] 最终状态: 核心=${this.isCoreLoaded}, 扩展=${this.isExtendedLoaded}`);
 
         } catch (error) {
-            console.error('[GlossService] 加载失败:', error);
+            console.error('[GlossService] ❌ 加载失败:', error);
         }
     }
 
@@ -208,48 +298,116 @@ export class GlossService {
         return allWords;
     }
 
+    /**
+     * 重置词库加载状态（仅用于测试）
+     */
+    public reset(): void {
+        console.warn('[GlossService] ⚠️ 重置词库加载状态（仅用于测试）');
+        this.wordBank = null;
+        this.glossDict.clear();
+        this.isCoreLoaded = false;
+        this.isExtendedLoaded = false;
+        this.loadingPromise = null;
+    }
+
+    /**
+     * 获取加载状态
+     */
+    public getLoadStatus(): { core: boolean; extended: boolean } {
+        return {
+            core: this.isCoreLoaded,
+            extended: this.isExtendedLoaded
+        };
+    }
+
+    /**
+     * 从Bundle加载JSON资源（优先使用缓存）
+     * 参考 AssetLoader.loadSpriteFrame() 的缓存机制
+     * @param bundleName Bundle名称
+     * @param assetPath 资源路径
+     * @returns Promise<JsonAsset | null>
+     */
     private async loadJsonFromBundle(bundleName: string, assetPath: string): Promise<JsonAsset | null> {
         return new Promise((resolve) => {
-            console.log(`[GlossService] 尝试从Bundle '${bundleName}' 加载资源: ${assetPath}`);
-            
-            assetManager.loadBundle(bundleName, (err, bundle) => {
-                if (err) {
-                    console.error(`[GlossService] Bundle '${bundleName}' 加载失败:`, err);
-                    resolve(null);
+            console.log(`[GlossService.loadJsonFromBundle] >>> 开始加载 ${bundleName}/${assetPath}`);
+
+            // ✅ 步骤1：检查Bundle是否已缓存（使用官方API）
+            let bundle = assetManager.getBundle(bundleName);
+
+            if (bundle) {
+                console.log(`[GlossService.loadJsonFromBundle] ✅ Bundle '${bundleName}' 已缓存`);
+
+                // ✅ 步骤2：检查资源是否已完全加载
+                const cachedAsset = bundle.get(assetPath, JsonAsset);
+
+                if (cachedAsset) {
+                    console.log(`[GlossService.loadJsonFromBundle] ✅ 资源 '${assetPath}' 已缓存，立即返回`);
+                    console.log(`[GlossService.loadJsonFromBundle] 资源数据:`, cachedAsset.json ? Object.keys(cachedAsset.json).slice(0, 3) : 'null');
+                    resolve(cachedAsset);
                     return;
                 }
 
+                console.log(`[GlossService.loadJsonFromBundle] ⚠️ 资源 '${assetPath}' 未缓存，动态加载`);
+
+                // ✅ 步骤3：资源未缓存，动态加载
+                // 尝试直接用 bundle.load 加载
                 bundle.load(assetPath, JsonAsset, (err, asset) => {
                     if (err) {
-                        console.error(`[GlossService] 无法从Bundle '${bundleName}' 加载资源: ${assetPath}`, err);
-                        resolve(null);
-                    } else if (!asset) {
-                        console.error(`[GlossService] 资源为空: ${bundleName}/${assetPath}`);
-                        resolve(null);
+                        console.error(`[GlossService.loadJsonFromBundle] ❌ JsonAsset 加载失败，尝试 Text 格式:`, err);
+
+                        // 降级方案：尝试用 Text 类型加载后手动解析
+                        bundle.load(assetPath, TextAsset, (textErr, textAsset: TextAsset) => {
+                            if (textErr) {
+                                console.error(`[GlossService.loadJsonFromBundle] ❌ Text 加载也失败:`, textErr);
+                                resolve(null);
+                            } else {
+                                console.log(`[GlossService.loadJsonFromBundle] ✅ Text 加载成功，手动解析JSON`);
+                                try {
+                                    const jsonData = JSON.parse(textAsset.text);
+                                    // 创建一个伪 JsonAsset 对象
+                                    const fakeJsonAsset = { json: jsonData } as any as JsonAsset;
+                                    resolve(fakeJsonAsset);
+                                } catch (parseErr) {
+                                    console.error(`[GlossService.loadJsonFromBundle] ❌ JSON 解析失败:`, parseErr);
+                                    resolve(null);
+                                }
+                            }
+                        });
                     } else {
-                        console.log(`[GlossService] 成功从Bundle '${bundleName}' 加载资源: ${assetPath}`);
+                        console.log(`[GlossService.loadJsonFromBundle] ✅ 动态加载成功: ${bundleName}/${assetPath}`);
+                        console.log(`[GlossService.loadJsonFromBundle] 资源数据:`, asset.json ? Object.keys(asset.json).slice(0, 3) : 'null');
                         resolve(asset);
                     }
                 });
-            });
-        });
-    }
 
-    private async loadJsonAsset(path: string): Promise<JsonAsset | null> {
-        return new Promise((resolve) => {
-            console.log(`[GlossService] 尝试加载资源: ${path}`);
-            resources.load(path, JsonAsset, (err, asset) => {
-                if (err) {
-                    console.error(`[GlossService] 无法加载资源: ${path}`, err);
-                    resolve(null);
-                } else if (!asset) {
-                    console.error(`[GlossService] 资源为空: ${path}`);
-                    resolve(null);
-                } else {
-                    console.log(`[GlossService] 成功加载资源: ${path}`);
-                    resolve(asset);
-                }
-            });
+            } else {
+                console.error(`[GlossService.loadJsonFromBundle] ❌ Bundle '${bundleName}' 未缓存！这是严重错误`);
+                console.error(`[GlossService.loadJsonFromBundle] 当前缓存的Bundle:`, assetManager['bundles'] ? Object.keys(assetManager['bundles']) : '无法获取');
+
+                // ✅ 步骤4：Bundle未缓存，加载Bundle
+                console.log(`[GlossService.loadJsonFromBundle] 尝试重新加载 Bundle '${bundleName}'...`);
+                assetManager.loadBundle(bundleName, (err, newBundle) => {
+                    if (err) {
+                        console.error(`[GlossService.loadJsonFromBundle] ❌ Bundle加载失败:`, err);
+                        resolve(null);
+                        return;
+                    }
+
+                    console.log(`[GlossService.loadJsonFromBundle] ✅ Bundle加载成功`);
+
+                    // ✅ 步骤5：加载资源
+                    newBundle.load(assetPath, JsonAsset, (loadErr, asset) => {
+                        if (loadErr) {
+                            console.error(`[GlossService.loadJsonFromBundle] ❌ 资源加载失败: ${bundleName}/${assetPath}`, loadErr);
+                            resolve(null);
+                        } else {
+                            console.log(`[GlossService.loadJsonFromBundle] ✅ 资源加载成功: ${bundleName}/${assetPath}`);
+                            console.log(`[GlossService.loadJsonFromBundle] 资源数据:`, asset.json ? Object.keys(asset.json).slice(0, 3) : 'null');
+                            resolve(asset);
+                        }
+                    });
+                });
+            }
         });
     }
 

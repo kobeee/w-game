@@ -1,0 +1,148 @@
+{
+  "timestamp": "2025-10-17T21:46:24.956166",
+  "tiles_dir": "/Users/elvis/Documents/codes/一个月一个AI项目挑战/2025/9月/w-game/src/cocos/assets/bundle/tiles",
+  "total_processed": 5,
+  "total_failed": 0,
+  "tiles": [
+    {
+      "file": "tile_correct.png",
+      "result": {
+        "success": true,
+        "original_size": [
+          512,
+          512
+        ],
+        "trimmed_size": [
+          449,
+          449
+        ],
+        "cropped_pixels": {
+          "left": 31,
+          "top": 31,
+          "right": 32,
+          "bottom": 32
+        },
+        "transparency_ratio": "23.1%",
+        "file_size": [
+          3.0888671875,
+          2.1826171875
+        ],
+        "error": null
+      }
+    },
+    {
+      "file": "tile_disabled.png",
+      "result": {
+        "success": true,
+        "original_size": [
+          512,
+          512
+        ],
+        "trimmed_size": [
+          449,
+          449
+        ],
+        "cropped_pixels": {
+          "left": 31,
+          "top": 31,
+          "right": 32,
+          "bottom": 32
+        },
+        "transparency_ratio": "23.1%",
+        "file_size": [
+          3.0869140625,
+          2.1806640625
+        ],
+        "error": null
+      }
+    },
+    {
+      "file": "tile_highlight.png",
+      "result": {
+        "success": true,
+        "original_size": [
+          512,
+          512
+        ],
+        "trimmed_size": [
+          449,
+          449
+        ],
+        "cropped_pixels": {
+          "left": 31,
+          "top": 31,
+          "right": 32,
+          "bottom": 32
+        },
+        "transparency_ratio": "23.1%",
+        "file_size": [
+          11.685546875,
+          10.1240234375
+        ],
+        "error": null
+      }
+    },
+    {
+      "file": "tile_selectable.png",
+      "result": {
+        "success": true,
+        "original_size": [
+          512,
+          512
+        ],
+        "trimmed_size": [
+          512,
+          502
+        ],
+        "cropped_pixels": {
+          "left": 0,
+          "top": 5,
+          "right": 0,
+          "bottom": 5
+        },
+        "transparency_ratio": "2.0%",
+        "file_size": [
+          16.544921875,
+          15.4521484375
+        ],
+        "error": null
+      }
+    },
+    {
+      "file": "tile_wrong.png",
+      "result": {
+        "success": true,
+        "original_size": [
+          512,
+          512
+        ],
+        "trimmed_size": [
+          512,
+          502
+        ],
+        "cropped_pixels": {
+          "left": 0,
+          "top": 5,
+          "right": 0,
+          "bottom": 5
+        },
+        "transparency_ratio": "2.0%",
+        "file_size": [
+          21.7666015625,
+          18.6669921875
+        ],
+        "error": null
+      }
+    }
+  ],
+  "max_trimmed_size": {
+    "width": 512,
+    "height": 502,
+    "note": "所有卡片裁剪后的最大尺寸"
+  },
+  "summary": {
+    "total": 5,
+    "success": 5,
+    "failed": 0
+  }
+}

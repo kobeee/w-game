@@ -884,106 +884,51 @@ interface ILevelGenerator {
 
 ## 10. 遮挡判定算法详解
 
-### 10.1 核心算法：重叠面积法
+### 10.1 实际实现：4象限法（BlockDetector.ts）
+
+⚠️ **重要说明**：本章节原描述的"重叠面积法"为早期设计方案，**实际实现采用"4象限法"**，详见代码实现。
+
+**核心算法（4象限法）**：
+1. 将卡片以中心点划分为4个45×45px的象限（TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT）
+2. ✅ 检查所有更高层级（layer > 当前层）的卡片，而非仅相邻层级
+3. 只要任意一个象限被上层卡片遮挡（任意重叠），整个卡片就不可点击
+4. 只有4个象限全部可见，卡片才可以点击
+
+**关键修正**：
+- ❌ 错误：只检查相邻上层（layer === card.layer + 1）
+- ✅ 正确：检查所有更高层级（layer > card.layer）
+- 原因：多层堆叠时，顶层卡片可以跨层直接遮挡底层卡片
 
 ```typescript
-/**
- * 判断上层卡片是否遮挡下层卡片
- * 规则：重叠面积超过下层卡片面积的50%即视为遮挡
- */
-function isBlocked(upperCard: Card, lowerCard: Card): boolean {
-    const overlapRect = getOverlapRect(upperCard.rect, lowerCard.rect);
+static isCardBlocked(card: Card, cards: Card[]): boolean {
+    if (card.removed) return true;
 
-    if (!overlapRect) {
-        return false; // 无重叠
+    // ✅ 检查所有更高层级的卡片（layer > 当前层）
+    const upperLayerCards = cards.filter(c => c.layer > card.layer && !c.removed);
+
+    if (upperLayerCards.length === 0) return false;
+
+    // 检查四个象限
+    const quadrants = [TOP_RIGHT, TOP_LEFT, BOTTOM_LEFT, BOTTOM_RIGHT];
+
+    for (const quadrant of quadrants) {
+        const quadrantRegion = this.getQuadrantRegion(card, quadrant);
+
+        // 任意象限被遮挡即算遮挡
+        if (upperLayerCards.some(upper => this.isQuadrantBlocked(quadrantRegion, upper))) {
+            return true;
+        }
     }
 
-    const overlapArea = overlapRect.width * overlapRect.height;
-    const lowerArea = lowerCard.rect.width * lowerCard.rect.height;
-    const overlapRatio = overlapArea / lowerArea;
-
-    return overlapRatio > 0.5; // 阈值：50%
-}
-
-/**
- * 计算两个矩形的重叠区域
- */
-function getOverlapRect(rect1: Rect, rect2: Rect): Rect | null {
-    const left = Math.max(rect1.x, rect2.x);
-    const right = Math.min(rect1.x + rect1.width, rect2.x + rect2.width);
-    const top = Math.max(rect1.y, rect2.y);
-    const bottom = Math.min(rect1.y + rect1.height, rect2.y + rect2.height);
-
-    if (left >= right || top >= bottom) {
-        return null; // 无重叠
-    }
-
-    return {
-        x: left,
-        y: top,
-        width: right - left,
-        height: bottom - top
-    };
+    return false; // 所有象限都可见
 }
 ```
 
-### 10.2 批量更新优化
-
-```typescript
-class StackBoard {
-    private cards: Card[] = [];
-
-    /**
-     * 更新所有卡片的遮挡状态
-     * 时间复杂度: O(n²) - n为卡片总数
-     */
-    updateBlockStatus(): void {
-        // 先重置所有卡片为可点击
-        for (const card of this.cards) {
-            card.blocked = false;
-        }
-
-        // 按层级从上到下遍历
-        const layerMap = this.groupByLayer();
-        const layers = Array.from(layerMap.keys()).sort((a, b) => b - a); // 降序
-
-        for (let i = 0; i < layers.length; i++) {
-            const upperLayer = layers[i];
-            const upperCards = layerMap.get(upperLayer)!;
-
-            // 检查所有更低的层级
-            for (let j = i + 1; j < layers.length; j++) {
-                const lowerLayer = layers[j];
-                const lowerCards = layerMap.get(lowerLayer)!;
-
-                // 检查每对卡片
-                for (const upper of upperCards) {
-                    for (const lower of lowerCards) {
-                        if (isBlocked(upper, lower)) {
-                            lower.blocked = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * 按层级分组卡片
-     */
-    private groupByLayer(): Map<number, Card[]> {
-        const map = new Map<number, Card[]>();
-
-        for (const card of this.cards) {
-            if (!map.has(card.layer)) {
-                map.set(card.layer, []);
-            }
-            map.get(card.layer)!.push(card);
-        }
-
-        return map;
-    }
-}
+**优势**：
+- ✅ 更符合玩家直觉（部分可见也算被遮挡）
+- ✅ 降低误操作率
+- ✅ 计算效率高（O(n)时间复杂度）
+- ✅ 多层场景下准确处理跨层遮挡
 ```
 
 ### 10.3 性能优化：空间分区（V0.2+）
