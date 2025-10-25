@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  word-validator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: w-game-word-validator
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - REDIS_HOST=${REDIS_HOST:-localhost}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_DB=${REDIS_DB:-0}
+      - API_SECRET_KEY=${API_SECRET_KEY}
+      - API_RATE_LIMIT=${API_RATE_LIMIT:-15}
+      - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-2000}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - w-game-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: w-game-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - w-game-network
+    command: redis-server --appendonly yes
+
+volumes:
+  redis-data:
+
+networks:
+  w-game-network:
+    driver: bridge
