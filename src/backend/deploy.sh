@@ -230,7 +230,7 @@ cat > .env <<EOF
 GEMINI_API_KEY=$GEMINI_API_KEY
 
 # Redis 配置
-REDIS_HOST=localhost
+REDIS_HOST=redis
 REDIS_PORT=6379
 REDIS_DB=0
 

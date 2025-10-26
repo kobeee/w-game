@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, Button, Toggle, director, sys, Sprite } from 'cc';
 import { AssetLoader } from '../core/AssetLoader';
+import { TimezoneSync } from '../services/TimezoneSync';
 // 使用统一AssetLoader，完全利用Cocos Creator 3.8.7缓存机制
 
 const { ccclass, property } = _decorator;
@@ -24,6 +25,20 @@ export class MainMenu extends Component {
     protected async onLoad(): Promise<void> {
         this.setupButtons();
         this.loadSettings();
+        
+        // 时区同步初始化（确保使用 Asia/Shanghai 时区）
+        try {
+            console.log('[MainMenu] 开始同步时区...');
+            const syncSuccess = await TimezoneSync.syncWithServer();
+            if (syncSuccess) {
+                console.log('[MainMenu] ✅ 时区同步成功');
+            } else {
+                console.warn('[MainMenu] ⚠️ 时区同步失败，使用本地 Asia/Shanghai 时区');
+            }
+        } catch (error) {
+            console.warn('[MainMenu] ⚠️ 时区同步出错，使用本地 Asia/Shanghai 时区:', error);
+        }
+        
         await this.loadRemoteAssets(); // 动态加载远程资源
         console.log('[MainMenu] 主菜单初始化完成');
     }

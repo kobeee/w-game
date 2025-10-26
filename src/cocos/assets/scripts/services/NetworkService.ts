@@ -18,6 +18,7 @@
 
 import { sys } from 'cc';
 import { SignatureGenerator } from './SignatureGenerator';
+import { TimezoneSync } from './TimezoneSync';
 
 /**
  * 网络服务配置
@@ -101,8 +102,8 @@ export class NetworkService {
         data: any,
         timeout: number = NetworkService.DEFAULT_TIMEOUT
     ): Promise<T> {
-        // 生成客户端签名（异步获取密钥）
-        const timestamp = Date.now();
+        // 生成客户端签名（异步获取密钥，使用 Asia/Shanghai 时区）
+        const timestamp = TimezoneSync.getCurrentTimestamp();
         const dataStr = JSON.stringify(data);
         const signature = await SignatureGenerator.generate(dataStr, timestamp);
 

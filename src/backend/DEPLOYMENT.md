@@ -201,7 +201,7 @@ nano .env
 `.env` 需要填写：
 ```
 GEMINI_API_KEY=你的API Key
-REDIS_HOST=localhost
+REDIS_HOST=redis
 REDIS_PORT=6379
 REDIS_DB=0
 API_SECRET_KEY=openssl rand -hex 32 生成的结果

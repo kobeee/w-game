@@ -7,6 +7,7 @@
 
 import { HmacSha256 } from '../utils/HmacSha256';
 import { NetworkService } from './NetworkService';
+import { TimezoneSync } from './TimezoneSync';
 
 export class SignatureGenerator {
     /**

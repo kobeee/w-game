@@ -165,6 +165,74 @@ FastAPI（第三层防护）
 
 ---
 
+## 2025-10-26 - 🌏 时区统一修复（后端 + 客户端）
+
+### 问题背景
+测试发现时间戳验证失败，原因是服务器和客户端时区不一致，导致签名时间戳过期。
+
+### 修复方案
+
+#### 后端服务时区统一
+**文件修改**：
+- [word_validator.py](src/backend/word_validator.py) - 添加pytz依赖，配置接口返回Asia/Shanghai时区信息
+- [signature_verify.py](src/backend/middleware/signature_verify.py) - 增加时间戳容错到5分钟，使用Asia/Shanghai时区验证
+- [requirements.txt](src/backend/requirements.txt) - 添加pytz==2023.3依赖
+- [Dockerfile](src/backend/Dockerfile) - 设置容器时区为Asia/Shanghai
+- [docker-compose.yml](src/backend/docker-compose.yml) - 添加TZ=Asia/Shanghai环境变量
+
+**关键改进**：
+- ✅ 配置接口返回服务器时区和当前时间
+- ✅ 签名验证使用Asia/Shanghai时区计算
+- ✅ 时间戳容错范围增加到5分钟（原60秒）
+- ✅ Docker容器自动设置时区
+
+#### 客户端时区同步
+**文件新增**：
+- [TimezoneSync.ts](src/cocos/assets/scripts/services/TimezoneSync.ts) - 时区同步工具类，确保客户端使用Asia/Shanghai时区
+- [test_with_timezone.py](test_with_timezone.py) - Python测试脚本验证时区功能
+
+**核心功能**：
+- ✅ 从服务器同步时间，计算本地时间偏移
+- ✅ 生成Asia/Shanghai时区的HMAC-SHA256签名
+- ✅ 支持微信小游戏和浏览器双平台
+- ✅ 提供完整的网络服务封装
+
+### 技术实现
+
+#### 后端时间戳验证
+```python
+# 使用Asia/Shanghai时区验证时间戳
+shanghai_tz = pytz.timezone('Asia/Shanghai')
+now = datetime.now(shanghai_tz)
+server_ts = int(now.timestamp() * 1000)
+delta = abs(server_ts - client_ts)
+```
+
+#### 客户端签名生成
+```typescript
+// 获取当前Asia/Shanghai时区时间戳
+static getCurrentTimestamp(): number {
+    const shanghaiTime = new Date().toLocaleString('en-US', {
+        timeZone: 'Asia/Shanghai'
+    });
+    return new Date(shanghaiTime).getTime();
+}
+```
+
+### 测试验证
+部署后可通过以下方式验证：
+1. 配置接口返回时区信息和服务器时间
+2. 签名验证使用同步的Asia/Shanghai时区
+3. 时间戳容错范围5分钟，避免轻微时间差导致认证失败
+
+### 影响范围
+- ✅ 解决时间戳过期导致的401认证失败
+- ✅ 统一后端和客户端时区，避免时区差异
+- ✅ 增加时间容错，提高系统稳定性
+- ✅ 为后续Cloudflare认证测试奠定基础
+
+---
+
 ## 2025-10-19 - 🎯 牌槽缩放比例微调 + 布局定位修正完成
 
 ### 修复概述

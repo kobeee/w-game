@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # 密钥配置（与客户端一致，从环境变量读取）
 SECRET_KEY = os.getenv("API_SECRET_KEY", "your-secret-key-here")
-SIGNATURE_EXPIRY_SECONDS = 60  # 签名有效期 60 秒
+SIGNATURE_EXPIRY_SECONDS = 300  # 签名有效期 5分钟（增加容错）
 
 
 def verify_signature(data: bytes, timestamp: str, signature: str) -> bool:
@@ -62,7 +62,7 @@ def check_timestamp(timestamp: str) -> bool:
     """
     验证时间戳（防重放攻击）
 
-    检查时间戳是否在有效期内（±60秒）
+    检查时间戳是否在有效期内（±5分钟），使用Asia/Shanghai时区
 
     Args:
         timestamp: 时间戳字符串（毫秒）
@@ -71,21 +71,36 @@ def check_timestamp(timestamp: str) -> bool:
         True 表示时间戳有效，False 表示时间戳过期
     """
     try:
-        ts = int(timestamp)
-        now = int(time.time() * 1000)
-        delta = abs(now - ts)
+        import pytz
+        from datetime import datetime
+        
+        # 解析客户端时间戳
+        client_ts = int(timestamp)
+        
+        # 使用Asia/Shanghai时区获取当前时间
+        shanghai_tz = pytz.timezone('Asia/Shanghai')
+        now = datetime.now(shanghai_tz)
+        server_ts = int(now.timestamp() * 1000)
+        
+        delta = abs(server_ts - client_ts)
 
         is_valid = delta < SIGNATURE_EXPIRY_SECONDS * 1000
 
         if not is_valid:
             logger.warning(
                 f"[Security] ⚠️ 时间戳过期: "
-                f"delta={delta}ms, expiry={SIGNATURE_EXPIRY_SECONDS*1000}ms"
+                f"client_ts={client_ts}, server_ts={server_ts}, delta={delta}ms, "
+                f"expiry={SIGNATURE_EXPIRY_SECONDS*1000}ms"
             )
+        else:
+            logger.info(f"[Security] ✅ 时间戳验证通过: delta={delta}ms")
 
         return is_valid
     except ValueError:
         logger.warning(f"[Security] ⚠️ 时间戳格式错误: {timestamp}")
+        return False
+    except Exception as e:
+        logger.error(f"[Security] 时间戳验证异常: {e}")
         return False
 
 

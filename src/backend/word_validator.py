@@ -22,6 +22,9 @@ import json
 import redis
 from typing import Optional
 import sys
+import time
+from datetime import datetime
+import pytz
 
 # 导入中间件
 from middleware.cloudflare_verify import cloudflare_verification_middleware
@@ -50,7 +53,7 @@ if not GEMINI_API_KEY:
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
 
 # ===== Redis 配置 =====
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 REDIS_DB = int(os.getenv("REDIS_DB", 0))
 WORD_CACHE_PREFIX = "word:"
@@ -295,13 +298,23 @@ async def get_config():
     响应:
       {
         "secretKey": "a1b2c3d4...",
-        "expiresAt": 1698567890000
+        "expiresAt": 1698567890000,
+        "serverTime": 1698567890000,
+        "timezone": "Asia/Shanghai"
       }
     """
-    import time
+    from middleware.signature_verify import SECRET_KEY
+    
+    # 使用Asia/Shanghai时区
+    shanghai_tz = pytz.timezone('Asia/Shanghai')
+    now = datetime.now(shanghai_tz)
+    timestamp_ms = int(now.timestamp() * 1000)
+    
     return {
-        "secretKey": API_SECRET_KEY,
-        "expiresAt": int(time.time() * 1000) + 3600000
+        "secretKey": SECRET_KEY,
+        "expiresAt": timestamp_ms + 3600000,  # 1小时后过期
+        "serverTime": timestamp_ms,
+        "timezone": "Asia/Shanghai"
     }
 
 
@@ -366,6 +379,15 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 if __name__ == "__main__":
     import uvicorn
+    
+    # 设置时区为Asia/Shanghai
+    os.environ['TZ'] = 'Asia/Shanghai'
+    try:
+        import time
+        time.tzset()
+    except AttributeError:
+        # Windows系统不支持tzset
+        pass
 
     uvicorn.run(
         "word_validator:app",
