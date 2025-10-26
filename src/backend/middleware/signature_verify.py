@@ -155,8 +155,17 @@ async def signature_verification_middleware(request: Request, call_next):
             content={"error": "INVALID_SIGNATURE", "message": "Invalid signature"}
         )
 
-    # ===== 4. 通过验证 =====
+    # ===== 4. 通过验证，重新注入请求体 =====
     logger.info(f"[Security] ✅ 签名验证通过")
 
-    response = await call_next(request)
+    # 创建新的请求对象，重新注入请求体
+    async def receive():
+        return {"type": "http.request", "body": body}
+    
+    new_request = Request(
+        scope=request.scope,
+        receive=receive
+    )
+
+    response = await call_next(new_request)
     return response
