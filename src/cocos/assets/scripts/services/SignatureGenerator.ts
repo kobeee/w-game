@@ -85,8 +85,44 @@ export class SignatureGenerator {
         const secretKey = await this.getSecretKey();
         const payload = data + timestamp.toString();
 
-        // 使用 HmacSha256 工具类生成签名
-        const signature = HmacSha256.compute(payload, secretKey);
+        // === 调试信息 ===
+        console.log(`[SignatureGenerator] 调试信息：`);
+        console.log(`  payload: ${payload}`);
+        console.log(`  secretKey: ${secretKey}`);
+        console.log(`  payload 长度: ${payload.length}`);
+        console.log(`  secretKey 长度: ${secretKey.length}`);
+
+        let signature: string;
+
+        // 尝试使用 Web Crypto API（浏览器原生，最可靠）
+        if (typeof crypto !== 'undefined' && crypto.subtle) {
+            try {
+                const encoder = new TextEncoder();
+                const keyData = encoder.encode(secretKey);
+                const messageData = encoder.encode(payload);
+
+                const key = await crypto.subtle.importKey(
+                    'raw',
+                    keyData,
+                    { name: 'HMAC', hash: 'SHA-256' },
+                    false,
+                    ['sign']
+                );
+
+                const signatureBuffer = await crypto.subtle.sign('HMAC', key, messageData);
+                const hashArray = Array.from(new Uint8Array(signatureBuffer));
+                signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+                console.log(`[SignatureGenerator] 使用 Web Crypto API`);
+            } catch (error) {
+                console.warn(`[SignatureGenerator] Web Crypto API 失败，降级到自定义实现:`, error);
+                signature = HmacSha256.compute(payload, secretKey);
+            }
+        } else {
+            // 降级：使用自定义 HmacSha256 实现
+            console.warn(`[SignatureGenerator] Web Crypto API 不可用，使用自定义实现`);
+            signature = HmacSha256.compute(payload, secretKey);
+        }
 
         console.log(
             `[SignatureGenerator] ✅ 签名已生成 (时间戳: ${timestamp}, 签名: ${signature.substring(
@@ -94,6 +130,7 @@ export class SignatureGenerator {
                 16
             )}...)`
         );
+        console.log(`[SignatureGenerator]    完整签名: ${signature}`);
 
         return signature;
     }

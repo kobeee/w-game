@@ -28,7 +28,7 @@ import pytz
 
 # 导入中间件
 from middleware.cloudflare_verify import cloudflare_verification_middleware
-from middleware.signature_verify import signature_verification_middleware
+from middleware.rsa_decrypt import rsa_decryption_middleware
 
 # ===== 日志配置 =====
 logging.basicConfig(
@@ -86,25 +86,30 @@ app.add_middleware(
 )
 
 # ===== 中间件注册（顺序很重要！） =====
-# 1. Cloudflare 验证中间件（最先执行）
+# 1. Cloudflare 验证中间件
 app.middleware("http")(cloudflare_verification_middleware)
 
-# 2. 签名验证中间件
-app.middleware("http")(signature_verification_middleware)
+# 2. RSA 解密中间件（从 X-Encrypted-Payload 头提取密文）
+app.middleware("http")(rsa_decryption_middleware)
 
 
 # ===== 数据模型 =====
-class ValidateRequest(BaseModel):
-    """单词验证请求"""
-    word: str
+class VerifyRequest(BaseModel):
+    """单词验证请求（注意：密文通过 X-Encrypted-Payload 头发送，此处仅用于接收明文单词）"""
+    word: str  # 解密后的单词
 
 
-class ValidateResponse(BaseModel):
+class VerifyResponse(BaseModel):
     """单词验证响应"""
+    request_id: str
     valid: bool
     definition: Optional[str] = None
-    source: str = "gemini"  # 数据来源: local/redis/gemini
-    error: Optional[str] = None
+    source: str = "gemini"  # 数据来源: cache/gemini/fallback
+    word: Optional[str] = None
+    latency_ms: int = 0
+    checked_at: str = ""
+    error_code: Optional[int] = None
+    message: Optional[str] = None
 
 
 # ===== Redis 缓存操作 =====
@@ -224,97 +229,133 @@ async def call_gemini_api(word: str) -> dict:
         return {"valid": False, "error": "INTERNAL_ERROR"}
 
 
-# ===== 路由 =====
-@app.post("/api/validate-word", response_model=ValidateResponse)
-async def validate_word(request: ValidateRequest):
-    """
-    单词验证接口
+# ===== 工具函数 =====
+def generate_request_id() -> str:
+    """生成请求 ID（格式: YYYY-MM-DD-4位随机十六进制）"""
+    from datetime import datetime
+    import random
+    now = datetime.utcnow().strftime("%Y-%m-%d")
+    rand = format(random.randint(0, 0xffff), '04x')
+    return f"{now}-{rand}"
 
-    三层验证策略：
-    1. 本地词库（客户端离线）
-    2. Redis 全局缓存（<5ms）
-    3. Gemini API（200-400ms）
+
+# ===== 路由 =====
+@app.post("/api/v1/word/verify", response_model=VerifyResponse)
+async def verify_word(request: VerifyRequest):
+    """
+    单词验证接口 - RSA-OAEP 加密版本
 
     请求:
-      POST /api/validate-word
+      POST /api/v1/word/verify
+      请求头: X-Encrypted-Payload: <RSA-OAEP 加密的 Base64 密文>
+
+    密文内容（加密前的 JSON）:
       {
-        "word": "CAT"
+        "word": "STACK",
+        "client_ts": 1730186400123,
+        "nonce": "7b4f0f86-0d90-4df0-97f1-2c8e9c1beaf0",
+        "client_id": "w-game-client",
+        "key_id": "2025Q4-01"
       }
 
     响应:
       {
+        "request_id": "2025-10-29-9f1c",
         "valid": true,
-        "definition": "猫",
-        "source": "gemini"
+        "definition": "一叠/堆积",
+        "source": "cache",
+        "word": "STACK",
+        "latency_ms": 108,
+        "checked_at": "2025-10-29T12:00:31.482Z"
       }
     """
+    start_time = time.time()
+    request_id = generate_request_id()
+
+    # 提取单词（由 RSA 中间件在解密后注入）
     word = request.word.strip().upper()
 
-    # ===== 输入验证 =====
-    if not word or len(word) < 2 or len(word) > 20:
-        logger.warning(f"[Validate] ⚠️ 无效输入: {request.word}")
-        return ValidateResponse(
+    # ===== 格式校验 =====
+    if not word or len(word) < 3 or len(word) > 20:
+        logger.warning(f"[{request_id}] 单词长度无效: {word}")
+        return VerifyResponse(
+            request_id=request_id,
             valid=False,
-            error="INVALID_INPUT"
+            error_code=42201,
+            message="word length < 3 or > 20"
         )
 
     if not word.isalpha():
-        logger.warning(f"[Validate] ⚠️ 包含非字母字符: {word}")
-        return ValidateResponse(
+        logger.warning(f"[{request_id}] 单词包含非字母字符: {word}")
+        return VerifyResponse(
+            request_id=request_id,
             valid=False,
-            error="NON_ALPHA_CHARACTERS"
+            error_code=42201,
+            message="invalid characters in word"
         )
 
-    # ===== 第2层：检查 Redis 全局缓存 =====
+    # ===== 检查缓存 =====
     cached_result = get_word_from_cache(word)
     if cached_result:
-        return ValidateResponse(
-            **cached_result,
-            source="redis"
+        latency_ms = int((time.time() - start_time) * 1000)
+        return VerifyResponse(
+            request_id=request_id,
+            word=word,
+            source="cache",
+            latency_ms=latency_ms,
+            checked_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            **cached_result
         )
 
-    # ===== 第3层：调用 Gemini API =====
-    logger.info(f"[Validate] 📡 调用 Gemini API: {word}")
+    # ===== 调用 Gemini API =====
+    logger.info(f"[{request_id}] 调用 Gemini: {word}")
     result = await call_gemini_api(word)
 
-    # 验证通过后，自动存入 Redis 缓存
+    # 验证通过后写入缓存
     if result.get("valid"):
         save_word_to_cache(word, result)
 
-    return ValidateResponse(
-        **result,
-        source="gemini"
+    latency_ms = int((time.time() - start_time) * 1000)
+    return VerifyResponse(
+        request_id=request_id,
+        word=word,
+        source="gemini",
+        latency_ms=latency_ms,
+        checked_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        **result
     )
 
 
-@app.get("/api/config")
-async def get_config():
+@app.get("/api/public-key")
+async def get_public_key():
     """
-    获取客户端配置（包括 API 密钥）
+    获取 RSA 公钥（供客户端使用）
 
-    此端点无需签名验证，客户端可直接调用
-    返回当前有效的 API 签名密钥
+    此端点无需加密验证，客户端可直接调用
+    返回 Base64 编码的 RSA-2048 公钥
 
     响应:
       {
-        "secretKey": "a1b2c3d4...",
-        "expiresAt": 1698567890000,
+        "publicKey": "MIIBIj...",（Base64编码的PEM格式公钥）
         "serverTime": 1698567890000,
-        "timezone": "Asia/Shanghai"
+        "timezone": "Asia/Shanghai",
+        "algorithm": "RSA-OAEP-SHA256"
       }
     """
-    from middleware.signature_verify import SECRET_KEY
-    
-    # 使用Asia/Shanghai时区
+    from middleware.rsa_decrypt import get_server_public_key_b64
+
+    # 使用 Asia/Shanghai 时区
     shanghai_tz = pytz.timezone('Asia/Shanghai')
     now = datetime.now(shanghai_tz)
     timestamp_ms = int(now.timestamp() * 1000)
-    
+
+    public_key_b64 = get_server_public_key_b64()
+
     return {
-        "secretKey": SECRET_KEY,
-        "expiresAt": timestamp_ms + 3600000,  # 1小时后过期
+        "publicKey": public_key_b64,
         "serverTime": timestamp_ms,
-        "timezone": "Asia/Shanghai"
+        "timezone": "Asia/Shanghai",
+        "algorithm": "RSA-OAEP-SHA256"
     }
 
 

@@ -124,18 +124,18 @@ class SHA256 {
     /**
      * 压缩函数
      */
-    private static compressionFunction(h: number[], w: number[]): number[] {
-        let [a, b, c, d, e, f, g, hash] = h;
+    private static compressionFunction(hh: number[], w: number[]): number[] {
+        let [a, b, c, d, e, f, g, h] = hh;
 
         for (let i = 0; i < 64; i++) {
             const S1 = SHA256.rightRotate(e, 6) ^ SHA256.rightRotate(e, 11) ^ SHA256.rightRotate(e, 25);
             const ch = (e & f) ^ (~e & g);
-            const temp1 = (hash + S1 + ch + SHA256.K[i] + w[i]) >>> 0;
+            const temp1 = (h + S1 + ch + SHA256.K[i] + w[i]) >>> 0;
             const S0 = SHA256.rightRotate(a, 2) ^ SHA256.rightRotate(a, 13) ^ SHA256.rightRotate(a, 22);
             const maj = (a & b) ^ (a & c) ^ (b & c);
             const temp2 = (S0 + maj) >>> 0;
 
-            hash = g;
+            h = g;
             g = f;
             f = e;
             e = (d + temp1) >>> 0;
@@ -145,7 +145,7 @@ class SHA256 {
             a = (temp1 + temp2) >>> 0;
         }
 
-        return [a, b, c, d, e, f, g, hash];
+        return [a, b, c, d, e, f, g, h];
     }
 
     /**

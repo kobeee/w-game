@@ -7,6 +7,7 @@ import { Card, WordMatch, Level, IWordMatcher } from '../data/StackTypes';
 import { GlossService } from '../data/GlossService';
 import { AssetLoader } from '../core/AssetLoader';
 import { GridLayoutLoader } from '../core/GridLayoutLoader';
+import { WordValidationManager } from '../services/WordValidationManager';
 
 const { ccclass, property } = _decorator;
 
@@ -52,8 +53,17 @@ export class StackGameApp extends Component {
     private wordsCleared: string[] = [];
     private currentMatch: WordMatch | null = null;
     private startTime: number = 0;
+    private validationManager: WordValidationManager = new WordValidationManager();
 
     protected async onLoad(): Promise<void> {
+        // 初始化AI单词验证系统
+        try {
+            await this.validationManager.initialize();
+            console.log('[StackGameApp] ✅ 单词验证系统初始化完成');
+        } catch (error) {
+            console.error('[StackGameApp] ⚠️ 单词验证系统初始化失败:', error);
+        }
+
         // 降级方案：如果词库未加载（直接预览Game场景时），执行加载
         const glossService = GlossService.getInstance();
         const loadStatus = glossService.getLoadStatus();
@@ -283,6 +293,22 @@ export class StackGameApp extends Component {
         this.stackBoard.removeCard(card.id, targetLocalPos).then((tileNode) => {
             // 添加字母到牌槽，并传递飞过来的节点
             this.slotQueue.addLetter(card.letter, tileNode || undefined);
+
+            // 并发开始单词验证（与飞行动画同时进行）
+            const currentLetters = this.slotQueue.getLetters();
+            const currentWord = currentLetters.join('');
+
+            // ✅ 关键修复：只有当单词长度 >= 3 时才验证
+            if (currentWord.length >= 3) {
+                console.log(`[StackGameApp] 单词长度满足条件（${currentWord.length}≥3），开始验证: ${currentWord}`);
+                this.validationManager.validateConcurrent(currentWord).then((result) => {
+                    console.log(`[StackGameApp] 验证完成: ${currentWord} → ${result.valid ? '有效' : '无效'} (${result.source}, ${result.latency}ms)`);
+                }).catch((error) => {
+                    console.warn(`[StackGameApp] 验证失败: ${currentWord}`, error);
+                });
+            } else {
+                console.log(`[StackGameApp] 单词长度不足（${currentWord.length}<3），暂不验证: ${currentWord}`);
+            }
         });
     }
 
@@ -581,5 +607,8 @@ export class StackGameApp extends Component {
             this.slotQueue.node.off('slot-full', this.onSlotFull, this);
             this.slotQueue.node.off('word-removed', this.onWordRemoved, this);
         }
+
+        // 清理验证状态
+        this.validationManager.clearPendingValidation();
     }
 }

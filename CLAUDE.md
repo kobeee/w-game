@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 绝对遵守
+1. 不要动不动就完美，谦虚一点
+2. 不要动不动就整一堆的md文件
+3. 不要动不动就写一堆的脚本
+
 ## 快速开始
 
 ### 核心命令

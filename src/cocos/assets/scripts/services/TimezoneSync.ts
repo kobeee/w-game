@@ -14,17 +14,18 @@ export class TimezoneSync {
         try {
             const response = await fetch('https://ai.elvis1949.cloudns.pro/w-game-service/api/config');
             const data = await response.json();
-            
+
             if (data.serverTime && data.timezone === this.TARGET_TIMEZONE) {
                 const serverTime = data.serverTime;
-                const localTime = this.getLocalTime();
+                // 直接用 Date.now() 获取本地时间戳，不要用自定义的 getLocalTime()
+                const localTime = Date.now();
                 this.serverTimeOffset = serverTime - localTime;
-                
+
                 console.log(`[TimezoneSync] ✅ 时间同步成功`);
                 console.log(`[TimezoneSync] 服务器时间: ${new Date(serverTime).toLocaleString('zh-CN')}`);
                 console.log(`[TimezoneSync] 本地时间: ${new Date(localTime).toLocaleString('zh-CN')}`);
                 console.log(`[TimezoneSync] 时间偏移: ${this.serverTimeOffset}ms`);
-                
+
                 return true;
             } else {
                 console.warn('[TimezoneSync] ⚠️ 服务器时区不匹配，使用本地时间');
@@ -42,11 +43,11 @@ export class TimezoneSync {
     static getCurrentTimestamp(): number {
         // 优先使用服务器同步的时间，如果没有同步则使用本地时间
         if (this.serverTimeOffset !== 0) {
-            return this.getLocalTime() + this.serverTimeOffset;
+            return Date.now() + this.serverTimeOffset;
         }
-        
-        // 使用本地时间，但转换为Asia/Shanghai时区
-        return this.getLocalTime();
+
+        // 使用本地时间戳
+        return Date.now();
     }
     
     /**
