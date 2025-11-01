@@ -408,7 +408,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -218.689453125,
+      "x": -219.4619140625,
       "y": 0,
       "z": 0
     },
@@ -663,7 +663,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 570.0546875,
+      "width": 571.599609375,
       "height": 60
     },
     "_anchorPoint": {
@@ -2402,6 +2402,9 @@
     "resultPanel": null,
     "backgroundSprite": {
       "__id__": 7
+    },
+    "endGameButton": {
+      "__id__": 53
     },
     "_id": "04FJ4vykVPd6toL7uY9+tO"
   },

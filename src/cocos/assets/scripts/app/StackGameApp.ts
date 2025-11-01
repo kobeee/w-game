@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, director, Sprite, UITransform } from 'cc';
+import { _decorator, Component, Node, Label, director, Sprite, UITransform, Button } from 'cc';
 import { LevelGenerator } from '../core/LevelGenerator';
 import { IncrementalWordMatcher } from '../core/WordMatcher';
 import { StackBoard } from '../ui/StackBoard';
@@ -45,6 +45,9 @@ export class StackGameApp extends Component {
 
     @property(Sprite)
     public backgroundSprite: Sprite = null!; // 场景背景，复用Game场景的背景图
+
+    @property(Button)
+    public endGameButton: Button = null!;
 
     private currentLevel: Level | null = null;
     private wordMatcher: IWordMatcher | null = null; // ✅ 延迟初始化，确保GlossService已加载
@@ -111,6 +114,18 @@ export class StackGameApp extends Component {
         if (this.resultPanel) {
             this.resultPanel.active = false;
         }
+
+        // 防御性检查：如果属性未绑定，尝试通过节点路径查找
+        if (!this.endGameButton) {
+            const foundButton = this.findButtonNode();
+            if (foundButton) {
+                this.endGameButton = foundButton;
+            } else {
+                console.error('[StackGameApp] ❌ 无法找到 EndGameButton 节点');
+            }
+        }
+        
+        this.setupEndGameButton();
     }
 
     protected async start(): Promise<void> {
@@ -133,6 +148,67 @@ export class StackGameApp extends Component {
         console.log(`[StackGameApp] start() 最终状态检查: 核心=${loadStatus.core}, 扩展=${loadStatus.extended}`);
 
         this.startGame();
+    }
+
+    /**
+     * 查找 EndGameButton 节点（辅助方法）
+     */
+    private findButtonNode(): Button | null {
+        // 尝试多个可能的路径
+        const paths = [
+            'BottomBar/EndGameButton',
+            'Canvas/BottomBar/EndGameButton',
+            'EndGameButton',
+            'Canvas/EndGameButton'
+        ];
+        
+        // 从当前节点开始查找
+        let rootNode = this.node;
+        // 如果当前节点不是 Canvas，尝试向上找到 Canvas
+        if (rootNode.name !== 'Canvas') {
+            let parent = rootNode.parent;
+            while (parent) {
+                if (parent.name === 'Canvas') {
+                    rootNode = parent;
+                    break;
+                }
+                parent = parent.parent;
+            }
+        }
+        
+        for (const path of paths) {
+            const node = rootNode.getChildByPath(path);
+            if (node) {
+                const buttonComponent = node.getComponent(Button);
+                if (buttonComponent) {
+                    return buttonComponent;
+                }
+            }
+        }
+        
+        // 如果路径查找失败，尝试递归查找
+        const findRecursive = (node: Node, name: string): Node | null => {
+            if (node.name === name) {
+                return node;
+            }
+            for (const child of node.children) {
+                const found = findRecursive(child, name);
+                if (found) {
+                    return found;
+                }
+            }
+            return null;
+        };
+        
+        const foundNode = findRecursive(rootNode, 'EndGameButton');
+        if (foundNode) {
+            const buttonComponent = foundNode.getComponent(Button);
+            if (buttonComponent) {
+                return buttonComponent;
+            }
+        }
+        
+        return null;
     }
 
     /**
@@ -559,7 +635,7 @@ export class StackGameApp extends Component {
      * 返回主菜单
      */
     public backToMenu(): void {
-        director.loadScene('Menu');
+        director.loadScene('MainMenu');
     }
 
     /**
@@ -610,5 +686,83 @@ export class StackGameApp extends Component {
 
         // 清理验证状态
         this.validationManager.clearPendingValidation();
+
+        if (this.endGameButton && this.endGameButton.node && this.endGameButton.node.isValid) {
+            this.endGameButton.node.off(Button.EventType.CLICK, this.onEndGameButtonClicked, this);
+            this.endGameButton.node.off(Node.EventType.TOUCH_END);
+        }
+    }
+
+    private setupEndGameButton(): void {
+        if (!this.endGameButton) {
+            console.warn('[StackGameApp] ⚠️ endGameButton 未绑定，结束按钮功能不可用');
+            return;
+        }
+
+        if (!this.endGameButton.node) {
+            console.error('[StackGameApp] ❌ endGameButton.node 为空');
+            return;
+        }
+
+        // 检查按钮组件是否存在
+        const buttonComponent = this.endGameButton.node.getComponent(Button);
+        if (!buttonComponent) {
+            console.error('[StackGameApp] ❌ EndGameButton 节点缺少 Button 组件！请在编辑器中为该节点添加 Button 组件');
+            return;
+        }
+
+        // 检查父节点链，确保没有禁用触摸的节点
+        let currentNode: Node | null = this.endGameButton.node.parent;
+        while (currentNode) {
+            if (!currentNode.active) {
+                console.error(`[StackGameApp] ❌ 父节点 "${currentNode.name}" 未激活，这会导致按钮无法点击！`);
+            }
+            currentNode = currentNode.parent;
+        }
+
+        // 检查按钮是否可交互
+        if (!buttonComponent.interactable) {
+            buttonComponent.interactable = true;
+        }
+
+        // 检查节点是否激活
+        if (!this.endGameButton.node.active) {
+            this.endGameButton.node.active = true;
+        }
+
+        // 确保父节点也激活
+        let parent = this.endGameButton.node.parent;
+        while (parent) {
+            if (!parent.active) {
+                parent.active = true;
+            }
+            parent = parent.parent;
+        }
+
+        // 绑定点击事件
+        this.endGameButton.node.on(Button.EventType.CLICK, this.onEndGameButtonClicked, this);
+        
+        // 备用方案：监听触摸事件
+        this.endGameButton.node.on(Node.EventType.TOUCH_END, () => {
+            this.onEndGameButtonClicked();
+        }, this);
+        
+        // 确保按钮节点在最上层（避免被其他节点遮挡）
+        const buttonParent = this.endGameButton.node.parent;
+        if (buttonParent) {
+            const maxIndex = buttonParent.children.length - 1;
+            this.endGameButton.node.setSiblingIndex(maxIndex);
+        }
+    }
+
+    private onEndGameButtonClicked(): void {
+        console.log('[StackGameApp] 玩家点击结束游戏按钮，返回主菜单');
+        this.forceExitToMenu();
+    }
+
+    private forceExitToMenu(): void {
+        this.gameState = GameState.ENDED;
+        this.validationManager.clearPendingValidation();
+        director.loadScene('MainMenu');
     }
 }

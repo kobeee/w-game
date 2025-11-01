@@ -1,3 +1,309 @@
+## 2025-10-31 - 🐛 **[BUGFIX]** 游戏模式选择功能修复
+
+### 问题描述
+- Toggle 可以同时打钩（互斥失效）
+- 勾选叠叠乐后仍进入小试牛刀场景
+
+### 根因分析
+1. **事件监听错误**：代码监听 ToggleContainer 的 `'toggle'` 事件，但 ToggleContainer 不会触发该事件
+2. **编辑器配置缺失**：每个 Toggle 需要手动绑定 `Toggle Group` 属性到 ToggleContainer
+
+### 修复内容
+
+**代码修复**（MainMenu.ts）：
+- setupButtons(): 改为直接监听 `basicModeToggle.node.on('toggle')` 和 `stackModeToggle.node.on('toggle')`
+- onGameModeChanged(): 添加调试日志，输出节点名称和选中状态
+- onDestroy(): 修正事件清理逻辑
+
+**编辑器操作**（需手动完成）：
+- [ ] BasicModeToggle 的 `Toggle Group` 属性绑定到 `ToggleGroup` 节点
+- [ ] StackModeToggle 的 `Toggle Group` 属性绑定到 `ToggleGroup` 节点
+- [ ] 确认 ToggleContainer 的 `Allow Switch Off` 为 false
+
+### 修改文件
+- src/cocos/assets/scripts/app/MainMenu.ts
+- docs/tests/validation/2025-10-31-游戏模式选择问题修复验证.md
+
+---
+
+## 2025-10-30 - 🎮 **[FEATURE]** 游戏模式选择系统完整实现
+
+### 功能概述
+
+实现了完整的游戏模式选择系统，玩家可以在主菜单中选择不同的玩法模式，并根据选择进入对应的游戏场景。
+
+### 核心功能
+
+#### 1. 游戏模式配置模块
+
+**新增文件**：`src/cocos/assets/scripts/data/GameMode.ts`
+
+- ✅ 定义游戏模式枚举：`GameMode.BASIC`（小试牛刀）、`GameMode.STACK`（叠叠乐）
+- ✅ 游戏模式配置表 `GAME_MODE_CONFIGS`：集中管理显示名称、场景名称、描述信息
+- ✅ 默认游戏模式：`DEFAULT_GAME_MODE = GameMode.BASIC`
+- ✅ localStorage 键名常量：`GAME_MODE_STORAGE_KEY = 'selected_game_mode'`
+
+**设计优势**：
+- 配置化管理，易于扩展新玩法
+- 类型安全，避免字符串硬编码
+- 统一维护场景名称和显示文案
+
+#### 2. MainMenu 脚本增强
+
+**修改文件**：`src/cocos/assets/scripts/app/MainMenu.ts`
+
+**新增属性**：
+```typescript
+@property(ToggleContainer)
+gameModeToggleContainer: ToggleContainer = null!;  // Toggle 容器
+
+@property(Toggle)
+basicModeToggle: Toggle = null!;  // 小试牛刀 Toggle
+
+@property(Toggle)
+stackModeToggle: Toggle = null!;  // 叠叠乐 Toggle
+
+private selectedGameMode: GameMode = DEFAULT_GAME_MODE;  // 当前选中模式
+```
+
+**新增方法**：
+- ✅ `syncGameModeUI()`: 同步游戏模式 UI 状态，根据 localStorage 恢复选中状态
+- ✅ `onGameModeChanged(toggle: Toggle)`: 游戏模式切换回调，根据 Toggle 节点名称判断选中模式
+
+**改进方法**：
+- ✅ `setupButtons()`: 添加玩法模式选择监听（ToggleContainer 的 'toggle' 事件）
+- ✅ `loadSettings()`: 加载游戏模式设置（带默认值兼容旧版本）
+- ✅ `saveSettings()`: 保存游戏模式到 localStorage
+- ✅ `onStartGame()`: 根据选中模式跳转到对应场景（`GAME_MODE_CONFIGS[selectedGameMode].sceneName`）
+- ✅ `onDestroy()`: 清理玩法模式选择监听器
+
+**关键实现**：
+```typescript
+// 根据 Toggle 节点名称判断选中模式
+private onGameModeChanged(toggle: Toggle): void {
+    const toggleName = toggle.node.name;
+    if (toggleName === 'BasicModeToggle') {
+        this.selectedGameMode = GameMode.BASIC;
+    } else if (toggleName === 'StackModeToggle') {
+        this.selectedGameMode = GameMode.STACK;
+    }
+    this.saveSettings();
+}
+
+// 跳转到对应场景
+private onStartGame(): void {
+    const config = GAME_MODE_CONFIGS[this.selectedGameMode];
+    director.loadScene(config.sceneName);
+}
+```
+
+#### 3. "使用完整词库"开关保留与优化
+
+**决策**：✅ **保留**该开关，理由如下：
+
+| 原因 | 说明 |
+|------|------|
+| **玩法差异性** | 小试牛刀（4-7字母）适合核心词库，叠叠乐（3-10字母）可扩展到完整词库 |
+| **难度梯度** | 初学者使用核心词库（2158词），高级玩家使用完整词库（4641词） |
+| **性能优化** | 核心词库体积更小，加载更快，单词匹配性能更好 |
+| **学习曲线** | 符合「轻学习」理念，玩家根据自身水平选择词库范围 |
+
+**优化方案**：
+- ✅ 优化命名：「使用完整词库」→「进阶词库（8-10字母挑战）」
+- ✅ 改进布局：将词库设置放在独立的 `DictionarySection` 区域
+- ✅ 优化文案：更符合游戏语境，提升用户理解度
+
+#### 4. MainMenu 场景结构调整（需在编辑器中手动完成）
+
+**新增节点结构**：
+```
+SettingsPanel
+├── GameModeSection (新增：玩法模式区域)
+│   ├── SectionTitle (Label: "🎮 玩法模式")
+│   └── ToggleGroup (ToggleContainer + Layout)
+│       ├── BasicModeToggle (Toggle: "小试牛刀", Is Checked=true)
+│       └── StackModeToggle (Toggle: "叠叠乐")
+└── DictionarySection (新增：词库设置区域)
+    ├── SectionTitle (Label: "📚 词库设置")
+    └── UseFullToggle (Toggle: "进阶词库 (8-10字母挑战)")
+```
+
+**关键配置**：
+- ✅ ToggleContainer.AllowSwitchOff = **false**（确保始终有一个 Toggle 被选中）
+- ✅ BasicModeToggle.IsChecked = **true**（默认选中小试牛刀）
+- ✅ Toggle 节点名称必须完全匹配：`BasicModeToggle`、`StackModeToggle`（大小写敏感）
+
+### 技术亮点
+
+1. **配置化设计**：
+   - 所有玩法配置集中在 `GameMode.ts`，易于维护和扩展
+   - 支持动态添加新玩法，无需修改 MainMenu 核心逻辑
+
+2. **ToggleContainer 互斥逻辑**：
+   - 使用 Cocos Creator 3.8.7 官方组件管理互斥选择
+   - AllowSwitchOff=false 确保始终有选中项
+
+3. **向后兼容**：
+   - localStorage 未保存游戏模式时使用默认值（GameMode.BASIC）
+   - 旧版本用户平滑迁移，无需额外操作
+
+4. **节点名称映射**：
+   - 通过 Toggle 节点名称判断选中模式
+   - 避免硬编码索引，提高代码可读性
+
+5. **类型安全**：
+   - 使用 TypeScript 枚举和接口，编译时类型检查
+   - 避免字符串拼写错误导致的运行时错误
+
+### 文档产出
+
+**新增设计文档**：
+- ✅ [docs/design/dev/008-游戏模式选择系统设计方案.md](docs/design/dev/008-游戏模式选择系统设计方案.md)
+  - 完整的技术方案设计（10章，约8000字）
+  - 详细的 Cocos Creator 3.8.7 编辑器操作步骤
+  - 功能测试清单、边界情况测试、UI 视觉测试
+  - 风险评估与缓解措施
+
+- ✅ [docs/design/dev/008-1-MainMenu场景结构说明.md](docs/design/dev/008-1-MainMenu场景结构说明.md)
+  - MainMenu 场景完整节点树结构
+  - 新增节点详细配置（GameModeSection、ToggleGroup、Toggle）
+  - 调整的节点配置（DictionarySection、UseFullToggle）
+  - 脚本属性绑定清单和验证步骤
+
+### 代码修改清单
+
+**新增文件**（1个）：
+- `src/cocos/assets/scripts/data/GameMode.ts` - 游戏模式配置模块
+
+**修改文件**（1个）：
+- `src/cocos/assets/scripts/app/MainMenu.ts` - 主菜单脚本增强
+
+**新增文档**（2个）：
+- `docs/design/dev/008-游戏模式选择系统设计方案.md`
+- `docs/design/dev/008-1-MainMenu场景结构说明.md`
+
+### Cocos Creator 编辑器操作（需手动完成）
+
+**⚠️ 重要提示**：代码部分已完成，但需要在 Cocos Creator 3.8.7 编辑器中手动完成以下操作：
+
+#### 操作清单：
+
+**步骤 1：创建玩法模式区域**
+- [ ] 在 `SettingsPanel` 下创建 `GameModeSection` 节点
+- [ ] 添加区域标题 `SectionTitle` (Label: "🎮 玩法模式")
+- [ ] 创建 `ToggleGroup` 节点并添加 `ToggleContainer` 组件
+- [ ] 设置 ToggleContainer.AllowSwitchOff = **false**
+
+**步骤 2：创建 Toggle 节点**
+- [ ] 创建 `BasicModeToggle` (名称必须完全匹配，大小写敏感)
+  - [ ] 设置 Is Checked = **true**
+  - [ ] 设置 Toggle Group = ToggleGroup
+  - [ ] 修改 Label 文本为 "○ 小试牛刀"
+- [ ] 创建 `StackModeToggle` (名称必须完全匹配)
+  - [ ] 设置 Toggle Group = ToggleGroup
+  - [ ] 修改 Label 文本为 "○ 叠叠乐"
+
+**步骤 3：调整词库设置区域**
+- [ ] 创建 `DictionarySection` 节点
+- [ ] 添加区域标题 `SectionTitle` (Label: "📚 词库设置")
+- [ ] 将 `UseFullToggle` 移动到 `DictionarySection` 下
+- [ ] 修改 `UseFullToggle/Label` 文本为 "☑️ 进阶词库 (8-10字母挑战)"
+
+**步骤 4：绑定脚本属性**
+- [ ] 选中 Canvas 节点（挂载 MainMenu 脚本的节点）
+- [ ] 在 MainMenu 组件中绑定以下属性：
+  - [ ] Game Mode Toggle Container → ToggleGroup
+  - [ ] Basic Mode Toggle → BasicModeToggle
+  - [ ] Stack Mode Toggle → StackModeToggle
+- [ ] 验证其他属性仍然正确绑定（Start Button, Use Full Toggle 等）
+
+**步骤 5：保存和验证**
+- [ ] Ctrl+S (Windows) 或 Cmd+S (Mac) 保存场景
+- [ ] 等待编译完成，检查 Console 是否有错误
+- [ ] 点击预览，测试玩法模式切换功能
+
+### 测试验证清单
+
+**功能测试**：
+- [ ] 默认状态：首次启动，「小试牛刀」被选中
+- [ ] 切换到叠叠乐：点击「叠叠乐」→ 点击「开始游戏」→ 进入 StackGameScene
+- [ ] 切换回小试牛刀：返回主菜单 → 点击「小试牛刀」→ 进入 Game 场景
+- [ ] 开启进阶词库：勾选「进阶词库」→ 开始游戏 → 验证词库加载
+- [ ] 设置持久化：选择「叠叠乐」+ 勾选「进阶词库」→ 退出 → 重新启动 → 设置被恢复
+- [ ] Toggle 互斥：点击「叠叠乐」→「小试牛刀」自动取消选中
+- [ ] 必选约束：尝试取消已选中的 Toggle → 保持选中状态
+
+**边界情况测试**：
+- [ ] localStorage 清空：清空 localStorage → 启动游戏 → 使用默认设置（小试牛刀 + 核心词库）
+- [ ] 属性未绑定：删除一个 Toggle 的绑定 → 运行 → Console 输出警告，不崩溃
+
+### 预期效果
+
+**主菜单配置面板布局**：
+```
+┌─────────────────────────────┐
+│  ⚙️ 配置面板                │
+├─────────────────────────────┤
+│  🎮 玩法模式                │
+│  ● 小试牛刀                 │
+│  ○ 叠叠乐                   │
+│                             │
+│  📚 词库设置                │
+│  ☑️ 进阶词库 (8-10字母挑战) │
+│                             │
+│  [ 开始游戏 ]               │
+└─────────────────────────────┘
+```
+
+**玩家体验流程**：
+1. 进入主菜单 → 看到两种玩法模式选择
+2. 勾选「叠叠乐」→ 点击「开始游戏」
+3. 进入 StackGameScene，开始叠叠乐玩法
+4. 返回主菜单 → 上次选择的「叠叠乐」仍被选中
+5. 切换到「小试牛刀」+ 勾选「进阶词库」
+6. 进入 Game 场景，加载完整词库（包含8-10字母单词）
+
+### 技术债务和后续优化
+
+**短期优化**：
+- 为 Toggle 添加选中/未选中的视觉差异（颜色、描边、阴影）
+- 添加切换动画（缩放、渐变）
+- 在每个 Toggle 下方添加玩法简短描述
+
+**中期优化**：
+- 添加玩法图标（在 Toggle 左侧）
+- 记录每种玩法的游玩次数和最高分
+- 点击 Toggle 时显示玩法预览
+
+**长期优化**：
+- 支持更多玩法模式的动态扩展
+- 添加玩法推荐系统
+- 实现玩法成就和统计展示
+
+### 经验总结
+
+1. **配置化优于硬编码**：
+   - 所有玩法信息集中在 `GAME_MODE_CONFIGS`，易于维护和扩展
+   - 新增玩法只需添加枚举值和配置项，无需修改核心逻辑
+
+2. **利用官方组件**：
+   - ToggleContainer 自动管理互斥逻辑，避免手动实现
+   - AllowSwitchOff=false 确保始终有选中项，符合产品需求
+
+3. **节点名称作为标识**：
+   - 通过 `toggle.node.name` 判断选中模式，避免索引硬编码
+   - 提高代码可读性，便于调试和维护
+
+4. **向后兼容设计**：
+   - 使用默认值兼容旧版本用户
+   - localStorage 键名使用常量，避免拼写错误
+
+5. **详细的文档产出**：
+   - 技术方案设计 + 场景结构说明 = 完整的开发和操作指南
+   - 降低实施难度，提高团队协作效率
+
+---
+
 ## 2025-10-30 - ✅ **[MAJOR]** RSA-OAEP 单词验证接口全量实现与验证完成
 
 ### 完成情况
@@ -1564,3 +1870,47 @@ console.log(`[SignatureGenerator]    完整签名: ${signature}`);
 - [HmacSha256.ts](src/cocos/assets/scripts/utils/HmacSha256.ts) - SHA-256 算法实现
 - [word_validator.py](src/backend/word_validator.py) - 后端签名验证逻辑
 - [signature_verify.py](src/backend/middleware/signature_verify.py) - 签名验证中间件
+
+---
+
+## 2025-11-01 - 🐛 **[BUGFIX]** 游戏模式 Toggle 互斥能力恢复
+
+### 问题描述
+- 主菜单中「小试牛刀」与「叠叠乐」两个 Toggle 依旧可以同时为选中状态。
+
+### 根因分析
+1. 编辑器结构调整后，`BasicModeToggle` 与 `StackModeToggle` 的 `Toggle Group` 引用未持久化保存，运行时它们游离于 `ToggleContainer` 管理之外。
+2. UI 状态恢复逻辑只设置目标 Toggle 为选中，未显式关闭另一 Toggle，导致残留选中状态不被覆盖。
+
+### 修复内容
+
+**代码修复**（`src/cocos/assets/scripts/app/MainMenu.ts`）：
+- 新增 `ensureGameModeToggleGroup()`，在 `setupButtons()` 内强制为两个 Toggle 重新绑定 `ToggleContainer`，并锁定 `allowSwitchOff = false`，避免互斥组失效。
+- 引入 `isSyncingGameMode` 标识并在 `syncGameModeUI()` 中显式同步两枚 Toggle 的勾选状态，彻底清除历史残留。
+- `onGameModeChanged()` 增加全量回退逻辑：任意 Toggle 勾选时手动取消另一枚，防止出现“双选”或“全未选”。
+- 调整日志输出，便于后续排查 ToggleContainer 的运行态配置。
+
+### 修改文件
+- `src/cocos/assets/scripts/app/MainMenu.ts`
+
+---
+
+## 2025-11-01 - 🛠️ **[BUGFIX+FEATURE]** 结束游戏按钮体验统一
+
+### 修复内容
+- 叠叠乐场景的“结束游戏”按钮改为加载 `MainMenu` 场景，并改由脚本属性绑定按钮节点，修复点击后无反应的问题。
+- 抽离 `stopGameLoop()` 清理逻辑，确保任意退出路径都会停止计时器、防止残留状态。
+
+### 新增功能
+- 小试牛刀场景新增“结束游戏”按钮，点击立即返回主菜单。
+- 词义弹层节点层级自动提升，保证弹出时可覆盖底部按钮。
+
+### 修改文件
+- `src/cocos/assets/scripts/app/StackGameApp.ts`
+- `src/cocos/assets/scripts/app/GameApp.ts`
+
+### 编辑器操作
+1. 打开小试牛刀场景（`Game.scene`），选中挂载 `GameApp` 脚本的节点。
+2. 创建或选中“结束游戏”按钮节点并添加 `Button` 组件。
+3. 将该按钮节点拖入 `GameApp` 组件的 `End Button` 属性槽位。
+4. 若调整节点顺序，仅需确保 `GlossSheet` 同级节点位于最上方即可。

@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, director, sys, Sprite, assetManager, SpriteFrame, JsonAsset } from 'cc';
+import { _decorator, Component, Node, director, sys, Sprite, assetManager, SpriteFrame, JsonAsset, Button } from 'cc';
 import { GlossService } from '../data/GlossService';
 import { WordBank } from '../data/WordBank';
 import { GameBoard } from '../ui/GameBoard';
@@ -20,6 +20,9 @@ export class GameApp extends Component {
 
     @property(GlossSheet)
     glossSheet: GlossSheet = null!;
+
+    @property(Button)
+    endButton: Button = null!;
 
     @property(Sprite)
     backgroundSprite: Sprite = null!; // 编辑器中不设置SpriteFrame，完全动态加载
@@ -43,6 +46,8 @@ export class GameApp extends Component {
         await this.initializeGame();
         this.setupEventListeners();
         this.setupComponents();
+        this.setupEndButton();
+        this.ensureGlossSheetOnTop();
         
         // 开始游戏
         this.startGame();
@@ -114,6 +119,46 @@ export class GameApp extends Component {
                 this.glossService.star(word);
                 console.log('[GameApp] 单词已收藏:', word);
             });
+        }
+    }
+
+    private setupEndButton(): void {
+        if (this.endButton) {
+            this.endButton.node.on(Button.EventType.CLICK, this.onEndButtonClicked, this);
+            console.log('[GameApp] 结束游戏按钮事件已绑定');
+        } else {
+            console.warn('[GameApp] endButton 未设置，结束按钮功能不可用');
+        }
+    }
+
+    private ensureGlossSheetOnTop(): void {
+        if (!this.glossSheet || !this.glossSheet.node || !this.glossSheet.node.parent) {
+            return;
+        }
+
+        const sheetNode = this.glossSheet.node;
+        const parent = sheetNode.parent;
+        const topIndex = parent.children.length - 1;
+        sheetNode.setSiblingIndex(topIndex);
+        console.log('[GameApp] 词义卡节点层级已提升至最上方，确保覆盖底部按钮');
+    }
+
+    private onEndButtonClicked(): void {
+        console.log('[GameApp] 结束游戏按钮被点击，返回主菜单');
+        this.exitToMenu();
+    }
+
+    private exitToMenu(): void {
+        this.stopGameLoop();
+        director.loadScene('MainMenu');
+    }
+
+    private stopGameLoop(): void {
+        this.isGameRunning = false;
+
+        if (this.gameTimer > 0) {
+            clearInterval(this.gameTimer);
+            this.gameTimer = 0;
         }
     }
 
@@ -276,14 +321,7 @@ export class GameApp extends Component {
 
     private endGame(): void {
         console.log('[GameApp] 游戏结束');
-        
-        this.isGameRunning = false;
-        
-        // 清理计时器
-        if (this.gameTimer > 0) {
-            clearInterval(this.gameTimer);
-            this.gameTimer = 0;
-        }
+        this.stopGameLoop();
         
         // 保存本局生词本（GlossService内部已处理）
         console.log('[GameApp] 本局完成回合数:', this.roundsCompleted);
@@ -382,15 +420,15 @@ export class GameApp extends Component {
     }
 
     protected onDestroy(): void {
-        // 清理计时器
-        if (this.gameTimer > 0) {
-            clearInterval(this.gameTimer);
-            this.gameTimer = 0;
-        }
+        this.stopGameLoop();
         
         // 清理事件监听
         if (this.board && this.board.node) {
             this.board.node.off('board:change', this.onBoardChange, this);
+        }
+
+        if (this.endButton && this.endButton.node) {
+            this.endButton.node.off(Button.EventType.CLICK, this.onEndButtonClicked, this);
         }
         
         console.log('[GameApp] 组件销毁');
