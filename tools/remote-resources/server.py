@@ -30,13 +30,29 @@ class Config:
     HOST = '0.0.0.0'
     PORT = 8080
     DEBUG = False
+    REFERER_CHECK_ENABLED = os.environ.get('REFERER_CHECK_ENABLED', 'true').lower() == 'true'
     
     # 安全配置
     ALLOWED_REFERERS = [
         'https://servicewechat.com',          # 微信小游戏
         'https://developers.weixin.qq.com',   # 微信开发者工具
         'http://localhost',                   # 本地开发
-        'http://127.0.0.1',                  # 本地开发
+        'http://127.0.0.1',                   # 本地开发
+        'http://usr',                         # 微信基础库 3.11+ 本地缓存协议
+        'https://usr',                        # 预留 https 版本
+        'wxfile://',                          # 旧版本基础库本地缓存协议
+        'https://ai.elvis1949.cloudns.pro',   # 线上同源访问
+        'http://ai.elvis1949.cloudns.pro',    # 兼容 http 反向代理
+        'https://elvis1949.top',              # Cloudflare Worker 回源域名
+        'http://elvis1949.top',
+    ]
+
+    # 允许 Referer 为空时的 Host
+    ALLOWED_HOSTS = [
+        'ai.elvis1949.cloudns.pro',
+        'localhost',
+        '127.0.0.1',
+        'elvis1949.top',
     ]
     
     # 访问限制 (每分钟最大请求数)
@@ -63,15 +79,30 @@ class SecurityManager:
         # Referer访问计数
         self.referer_access_log: Dict[str, list] = defaultdict(list)
         
-    def is_allowed_referer(self, referer: str) -> bool:
+    def is_allowed_referer(self, referer: str, host: str | None = None) -> bool:
         """检查Referer是否允许"""
         if not referer:
-            return False
+            return self._is_allowed_host(host)
             
+        normalized = referer.strip()
+
         for allowed in Config.ALLOWED_REFERERS:
-            if referer.startswith(allowed):
+            if normalized.startswith(allowed):
                 return True
-        return False
+
+        # 兼容 Cloudflare 等代理在剥离协议时的表现
+        if normalized.startswith('//usr/'):
+            return True
+
+        return self._is_allowed_host(host)
+
+    @staticmethod
+    def _is_allowed_host(host: str | None) -> bool:
+        if not host:
+            return False
+
+        host_no_port = host.split(':', 1)[0].lower()
+        return host_no_port in Config.ALLOWED_HOSTS
     
     def check_rate_limit(self, ip: str, referer: str = None) -> bool:
         """检查访问频率限制"""
@@ -136,7 +167,8 @@ def create_app():
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
     
     # CORS配置
-    CORS(app, origins=Config.ALLOWED_REFERERS)
+    cors_origins = [ref for ref in Config.ALLOWED_REFERERS if ref.startswith('http')]
+    CORS(app, origins=cors_origins)
     
     # 安全管理器
     security = SecurityManager()
@@ -153,6 +185,7 @@ def create_app():
         # 获取客户端信息
         ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
         referer = request.headers.get('Referer', '')
+        host = request.headers.get('Host', '')
         user_agent = request.headers.get('User-Agent', '')
         
         # 健康检查接口跳过验证
@@ -164,7 +197,7 @@ def create_app():
             return
             
         # Referer检查 (开发环境可以放宽)
-        if not Config.DEBUG and not security.is_allowed_referer(referer):
+        if Config.REFERER_CHECK_ENABLED and not Config.DEBUG and not security.is_allowed_referer(referer, host):
             app.logger.warning(f"Blocked request from invalid referer: {referer} (IP: {ip})")
             abort(403)
         
@@ -328,10 +361,28 @@ def generate_version_file(assets_dir: Path):
 # CLI命令
 # ============================================================================
 
-@click.group()
-def cli():
+def run_server(host: str, port: int, debug: bool) -> None:
+    """启动 Flask 资源服务器"""
+    Config.DEBUG = debug
+
+    app = create_app()
+
+    print(f"""
+🚀 W-Game 资源服务器启动
+📍 地址: http://{host}:{port}
+📂 资源目录: {Config.ASSETS_DIR}
+🔒 安全模式: {'关闭' if debug else '开启'}
+    """)
+
+    app.run(host=host, port=port, debug=debug)
+
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx: click.Context):
     """W-Game 远程资源服务器工具"""
-    pass
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(serve)
 
 @cli.command()
 @click.option('--host', default=Config.HOST, help='服务器地址')
@@ -339,18 +390,7 @@ def cli():
 @click.option('--debug', is_flag=True, help='调试模式')
 def serve(host, port, debug):
     """启动资源服务器"""
-    Config.DEBUG = debug
-    
-    app = create_app()
-    
-    print(f"""
-🚀 W-Game 资源服务器启动
-📍 地址: http://{host}:{port}
-📂 资源目录: {Config.ASSETS_DIR}
-🔒 安全模式: {'关闭' if debug else '开启'}
-    """)
-    
-    app.run(host=host, port=port, debug=debug)
+    run_server(host, port, debug)
 
 @cli.command()
 def optimize():

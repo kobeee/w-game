@@ -9,10 +9,19 @@ export class TimezoneSync {
     
     /**
      * 从服务器获取当前时间（Asia/Shanghai时区）
+     * 
+     * 注意：根据新方案（RSA加密），时区同步不是必须的，因为时间戳验证在后端完成。
+     * 此方法改为使用 /api/public-key 接口获取服务器时间（该接口返回服务器时间和时区信息）。
      */
     static async syncWithServer(): Promise<boolean> {
         try {
-            const response = await fetch('https://ai.elvis1949.cloudns.pro/w-game-service/api/config');
+            // 使用 /api/public-key 接口获取服务器时间（该接口存在且返回服务器时间）
+            const response = await fetch('https://ai.elvis1949.cloudns.pro/w-game-service/api/public-key');
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
             const data = await response.json();
 
             if (data.serverTime && data.timezone === this.TARGET_TIMEZONE) {
@@ -161,18 +170,31 @@ export class TimezoneSync {
 
 /**
  * 网络服务封装 - 使用时区同步的签名
+ * 
+ * ⚠️ 注意：此类已废弃，新方案使用 RSA 加密（见 NetworkService.ts）
+ * 保留此类仅用于向后兼容，不推荐使用
  */
 export class NetworkServiceWithTimezone {
     private static baseUrl = 'https://ai.elvis1949.cloudns.pro/w-game-service';
     
     /**
      * 获取配置（包括密钥）
+     * 
+     * ⚠️ 已废弃：新方案不再需要此接口
      */
     static async getConfig(): Promise<{secretKey: string, expiresAt: number, serverTime: number, timezone: string} | null> {
         try {
-            const response = await fetch(`${this.baseUrl}/api/config`);
+            // 注意：/api/config 接口已不存在，新方案使用 /api/public-key
+            const response = await fetch(`${this.baseUrl}/api/public-key`);
             if (response.ok) {
-                return await response.json();
+                const data = await response.json();
+                // 返回兼容格式（注意：secretKey 字段在新方案中不存在）
+                return {
+                    secretKey: '', // ⚠️ 新方案不再使用 secretKey
+                    expiresAt: Date.now() + 3600000, // 假数据
+                    serverTime: data.serverTime,
+                    timezone: data.timezone
+                };
             }
         } catch (error) {
             console.error('[NetworkService] 获取配置失败:', error);

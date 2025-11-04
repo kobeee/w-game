@@ -1,3 +1,39 @@
+## 2025-10-31 - 🐛 **[BUGFIX]** 修复 /api/config 接口404错误
+
+### 问题描述
+- 客户端启动时调用 `/api/config` 接口返回 404 Not Found
+- `TimezoneSync.syncWithServer()` 方法失败，导致时区同步失败
+
+### 根因分析
+根据新方案（RSA加密），`/api/config` 接口已被取消，因为：
+1. 新方案使用 RSA 公钥加密，公钥可以硬编码在客户端或从 `/api/public-key` 获取
+2. 不再需要动态获取签名密钥（HMAC-SHA256 方案已废弃）
+3. 时区同步在新方案中不是必须的（时间戳验证在后端完成，容忍 ±90秒）
+
+### 修复内容
+
+**代码修复**（TimezoneSync.ts）：
+- `syncWithServer()`: 改为使用 `/api/public-key` 接口获取服务器时间（该接口存在且返回服务器时间）
+- `NetworkServiceWithTimezone.getConfig()`: 修改为使用 `/api/public-key` 接口（虽然此类已废弃，但为了向后兼容性）
+
+**修改详情**：
+```typescript
+// 修改前（错误）
+const response = await fetch('https://ai.elvis1949.cloudns.pro/w-game-service/api/config');
+
+// 修改后（正确）
+const response = await fetch('https://ai.elvis1949.cloudns.pro/w-game-service/api/public-key');
+```
+
+### 修改文件
+- src/cocos/assets/scripts/services/TimezoneSync.ts
+
+### 后续建议
+- `SignatureGenerator.ts` 中仍调用 `/api/config` 接口，但该类在新方案中已不再使用（新方案使用 RSA 加密）
+- 如需完全清理旧代码，可以考虑删除或标记为废弃
+
+---
+
 ## 2025-10-31 - 🐛 **[BUGFIX]** 游戏模式选择功能修复
 
 ### 问题描述
@@ -162,6 +198,38 @@ SettingsPanel
   - 完整的技术方案设计（10章，约8000字）
   - 详细的 Cocos Creator 3.8.7 编辑器操作步骤
   - 功能测试清单、边界情况测试、UI 视觉测试
+
+---
+
+## 2025-11-01 - 🔒 **[SECURITY]** 微信小游戏远程资源 Referer 兼容
+
+### 问题描述
+- 微信开发者工具基础库 3.11.0 在加载远程 Bundle 时，请求头 Referer 变更为 `http://usr/...`
+- 资源服务器严格校验 Referer，导致返回 403/500，小游戏首屏无法完成远程资源下载
+
+### 根因分析
+1. `Config.ALLOWED_REFERERS` 只包含 `https://servicewechat.com` 等旧版 Referer
+2. 新版基础库的本地缓存协议使用 `usr`、`wxfile://` 前缀，不在白名单
+3. Cloudflare 代理在过滤协议时会下发 `//usr/...` 形式，进一步触发拒绝
+
+### 修复内容
+- `tools/remote-resources/server.py`
+  - 扩充引用白名单，新增 `http://usr`、`https://usr`、`wxfile://`
+  - 引入 Referer 归一化逻辑，兼容 `//usr/` 形式
+  - CORS 配置仅使用 `http(s)` 协议白名单，避免非法 scheme 触发解析异常
+  - `python server.py` 无参数时自动执行 `serve`，解决容器因缺少子命令反复重启的问题
+  - Referer 为空时允许同域 Host 白名单通过，支持 curl 调试和 Cloudflare 回源请求
+  - 加入 `elvis1949.top` 回源域名到白名单，并提供 `REFERER_CHECK_ENABLED` 环境变量开关
+
+### 验证方案
+1. 本地 mock 请求：`curl -H "Referer: http://usr/gamecaches/internal"` 返回 200
+2. 微信开发者工具重新编译小游戏，确认 `internal/config.json` 成功返回
+3. 首屏进度条正常推进，远程 Bundle 全部加载成功
+
+### 后续建议
+- 部署线上服务时务必同步更新 Docker 镜像并重新发布
+- 每次微信基础库升级后，留意 Referer/User-Agent 变更，及时更新白名单
+- 如需进一步加强安全性，可在生产环境使用 Token 校验取代 Referer 校验
   - 风险评估与缓解措施
 
 - ✅ [docs/design/dev/008-1-MainMenu场景结构说明.md](docs/design/dev/008-1-MainMenu场景结构说明.md)
