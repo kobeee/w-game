@@ -45,11 +45,8 @@ export class MainMenu extends Component {
         
         // 时区同步初始化（确保使用 Asia/Shanghai 时区）
         try {
-            console.log('[MainMenu] 开始同步时区...');
             const syncSuccess = await TimezoneSync.syncWithServer();
-            if (syncSuccess) {
-                console.log('[MainMenu] ✅ 时区同步成功');
-            } else {
+            if (!syncSuccess) {
                 console.warn('[MainMenu] ⚠️ 时区同步失败，使用本地 Asia/Shanghai 时区');
             }
         } catch (error) {
@@ -57,7 +54,7 @@ export class MainMenu extends Component {
         }
         
         await this.loadRemoteAssets(); // 动态加载远程资源
-        console.log('[MainMenu] 主菜单初始化完成');
+        
     }
 
     protected onEnable(): void {
@@ -78,12 +75,6 @@ export class MainMenu extends Component {
         if (this.basicModeToggle && this.stackModeToggle) {
             this.basicModeToggle.node.on('toggle', this.onGameModeChanged, this);
             this.stackModeToggle.node.on('toggle', this.onGameModeChanged, this);
-            console.log('[MainMenu] 游戏模式Toggle事件监听已设置');
-            
-            // 验证ToggleContainer配置
-            if (this.gameModeToggleContainer) {
-                console.log('[MainMenu] ToggleContainer已设置，allowSwitchOff:', this.gameModeToggleContainer.allowSwitchOff);
-            }
         } else {
             console.warn('[MainMenu] 游戏模式Toggle未完全设置 - basic:', !!this.basicModeToggle, ', stack:', !!this.stackModeToggle);
         }
@@ -101,12 +92,10 @@ export class MainMenu extends Component {
         // 兼容旧版本：如果没有保存过游戏模式，使用默认值
         if (!savedMode) {
             savedMode = DEFAULT_GAME_MODE;
-            console.log('[MainMenu] 未找到游戏模式设置，使用默认值:', DEFAULT_GAME_MODE);
         }
         
         this.selectedGameMode = savedMode as GameMode;
         
-        console.log('[MainMenu] 已加载设置 - 游戏模式:', this.selectedGameMode);
         
         // 同步 UI 状态
         this.syncGameModeUI();
@@ -119,19 +108,17 @@ export class MainMenu extends Component {
             this.useFullToggle.isChecked = useFullDictionary;
         }
         
-        console.log('[MainMenu] 已加载设置 - 使用完整词库:', useFullDictionary);
+        
     }
 
     private saveSettings(): void {
         // 保存游戏模式
         sys.localStorage.setItem(GAME_MODE_STORAGE_KEY, this.selectedGameMode);
-        console.log('[MainMenu] 已保存设置 - 游戏模式:', this.selectedGameMode);
         
         // 保存词库设置
         if (this.useFullToggle) {
             const useFull = this.useFullToggle.isChecked;
             sys.localStorage.setItem('use_full_dictionary', useFull ? 'true' : 'false');
-            console.log('[MainMenu] 已保存设置 - 使用完整词库:', useFull);
         }
     }
 
@@ -182,7 +169,6 @@ export class MainMenu extends Component {
             return;
         }
 
-        console.log('[MainMenu] Toggle事件触发 - name:', toggle.node.name, ', isChecked:', toggle.isChecked);
         
         // 根据 toggle 的 node.name 判断选中的模式
         const toggleName = toggle.node.name;
@@ -211,7 +197,6 @@ export class MainMenu extends Component {
         this.selectedGameMode = nextMode;
         this.syncGameModeUI();
         
-        console.log('[MainMenu] 游戏模式切换成功:', GAME_MODE_CONFIGS[this.selectedGameMode].displayName, '场景:', GAME_MODE_CONFIGS[this.selectedGameMode].sceneName);
         
         // 实时保存设置
         this.saveSettings();
@@ -222,13 +207,11 @@ export class MainMenu extends Component {
 
         const useFull = this.useFullToggle.isChecked;
         const modeText = useFull ? '完整词库' : '基础词库';
-        console.log('[MainMenu] 当前词库模式:', modeText);
         
         // 可以在这里更新UI显示当前模式
     }
 
     private onStartGame(): void {
-        console.log('[MainMenu] 开始游戏按钮被点击');
         
         // 保存当前设置
         this.saveSettings();
@@ -237,20 +220,18 @@ export class MainMenu extends Component {
         const config = GAME_MODE_CONFIGS[this.selectedGameMode];
         const sceneName = config.sceneName;
         
-        console.log(`[MainMenu] 跳转到场景: ${sceneName} (${config.displayName})`);
         
         // 跳转到游戏场景
         director.loadScene(sceneName, (error: any) => {
             if (error) {
                 console.error(`[MainMenu] 跳转场景失败: ${sceneName}`, error);
             } else {
-                console.log(`[MainMenu] 成功跳转到场景: ${sceneName}`);
+                
             }
         });
     }
 
     private onToggleChanged(toggle: Toggle): void {
-        console.log('[MainMenu] 词库模式切换:', toggle.isChecked ? '完整词库' : '基础词库');
         
         this.updateDictionaryModeDisplay();
         
@@ -262,7 +243,6 @@ export class MainMenu extends Component {
      * 重置游戏数据（可选功能）
      */
     resetGameData(): void {
-        console.log('[MainMenu] 重置游戏数据');
         
         // 清除本地存储的游戏数据
         sys.localStorage.removeItem('session_notebook');
@@ -272,7 +252,7 @@ export class MainMenu extends Component {
         this.loadSettings();
         this.refreshUI();
         
-        console.log('[MainMenu] 游戏数据已重置');
+        
     }
 
     /**
@@ -281,7 +261,6 @@ export class MainMenu extends Component {
     showSettings(): void {
         if (this.settingsPanel) {
             this.settingsPanel.active = true;
-            console.log('[MainMenu] 显示设置面板');
         }
     }
 
@@ -291,7 +270,6 @@ export class MainMenu extends Component {
     hideSettings(): void {
         if (this.settingsPanel) {
             this.settingsPanel.active = false;
-            console.log('[MainMenu] 隐藏设置面板');
         }
     }
 
@@ -299,14 +277,13 @@ export class MainMenu extends Component {
      * 查看历史生词本
      */
     viewHistory(): void {
-        console.log('[MainMenu] 查看历史生词本');
         
         // 跳转到结果页面查看历史
         director.loadScene('Result', (error: any) => {
             if (error) {
                 console.error('[MainMenu] 跳转历史页面失败:', error);
             } else {
-                console.log('[MainMenu] 成功跳转到历史页面');
+                
             }
         });
     }
@@ -348,7 +325,7 @@ export class MainMenu extends Component {
             this.useFullToggle.node.off('toggle', this.onToggleChanged, this);
         }
         
-        console.log('[MainMenu] 主菜单组件销毁');
+        
     }
 
     private ensureGameModeToggleGroup(): void {
@@ -384,7 +361,7 @@ export class MainMenu extends Component {
         }
 
         if (toggles.length > 0) {
-            console.log('[MainMenu] 已重新绑定游戏模式 ToggleGroup');
+            
         }
     }
 
@@ -393,12 +370,10 @@ export class MainMenu extends Component {
      */
     private async loadRemoteAssets(): Promise<void> {
         try {
-            console.log('[MainMenu] 开始加载远程资源...');
             const assetLoader = AssetLoader.getInstance();
             
             // 显示缓存统计信息
             const cacheStats = assetLoader.getCacheStats();
-            console.log(`[MainMenu] 当前缓存统计: ${cacheStats.bundleCount}个Bundle (${cacheStats.bundleNames.join(', ')})`);
             
             // 并行加载背景和标题资源
             await Promise.all([
@@ -407,7 +382,7 @@ export class MainMenu extends Component {
                 // 加载标题资源 - 自动利用预加载缓存
                 this.loadSpriteFromBundle('title', 'title/spriteFrame', this.titleSprite)
             ]);
-            console.log('[MainMenu] 远程资源加载完成');
+            
         } catch (error) {
             console.error('[MainMenu] 远程资源加载失败:', error);
             // 可以加载本地备用资源或显示占位图
@@ -425,20 +400,11 @@ export class MainMenu extends Component {
             const bundleCached = assetLoader.isBundleCached(bundleName);
             const assetCached = assetLoader.isAssetCached(bundleName, assetPath);
             
-            console.log(`[MainMenu] 加载${bundleName}/${assetPath} - Bundle缓存:${bundleCached}, 资源完全加载:${assetCached}`);
-            
-            if (assetCached) {
-                console.log(`[MainMenu] 🚀 资源立即可用，无需等待加载`);
-            } else {
-                console.log(`[MainMenu] ⏳ 资源需要完全加载，可能有延迟`);
-            }
-            
             // 使用统一加载器加载资源
             const spriteFrame = await assetLoader.loadSpriteFrame(bundleName, assetPath);
             
             if (sprite) {
                 sprite.spriteFrame = spriteFrame;
-                console.log(`[MainMenu] ✅ 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
             }
         } catch (error) {
             console.error(`[MainMenu] 加载Sprite失败: ${bundleName}/${assetPath}`, error);

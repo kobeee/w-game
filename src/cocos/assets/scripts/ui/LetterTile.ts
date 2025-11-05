@@ -90,7 +90,7 @@ export class LetterTile extends Component {
         const states: TileState[] = ['selectable', 'highlight', 'correct', 'wrong', 'disabled'];
         const assetLoader = AssetLoader.getInstance();
         
-        console.log('[LetterTile] 开始加载瓦片图片资源...');
+        
         
         for (const state of states) {
             const assetPath = `tile_${state}/spriteFrame`;
@@ -100,9 +100,7 @@ export class LetterTile extends Component {
                 const isCached = assetLoader.isAssetCached('tiles', assetPath);
                 
                 if (isCached) {
-                    console.log(`[LetterTile] 🚀 立即获取已缓存的瓦片: ${state}`);
                 } else {
-                    console.log(`[LetterTile] ⏳ 瓦片资源需要加载: ${state}`);
                 }
                 
                 // 使用AssetLoader加载远程Bundle资源
@@ -110,7 +108,6 @@ export class LetterTile extends Component {
                 
                 if (spriteFrame) {
                     this.spriteFrames[state] = spriteFrame;
-                    console.log(`[LetterTile] ✅ 瓦片加载成功: ${state}`);
                 } else {
                     console.error(`[LetterTile] ❌ 瓦片加载失败: ${state}`);
                 }
@@ -121,7 +118,7 @@ export class LetterTile extends Component {
         
         this.isLoaded = true;
         this.updateVisual();
-        console.log('[LetterTile] 🎉 所有瓦片图片加载完成');
+        
     }
 
     private updateVisual(): void {
@@ -135,7 +132,6 @@ export class LetterTile extends Component {
             this.bgSprite.spriteFrame = spriteFrame;
             // 重置颜色为白色（正常显示SpriteFrame）
             this.bgSprite.color = new Color(255, 255, 255, 255);
-            console.log(`[LetterTile] 设置状态: ${this.currentState}, 字母: ${this.currentChar}`);
         } else {
             console.error(`[LetterTile] 缺少状态图片: ${this.currentState}`);
         }

@@ -79,7 +79,7 @@ export class LevelGenerator {
         const selectedPattern = rng.choice(layoutPatterns);
         const numLayers = 2 + rng.nextInt(0, 2); // 2-3层
 
-        console.log(`[LevelGenerator] 使用智能布局: ${selectedPattern}, 层数: ${numLayers}`);
+        
 
         const layout = SmartLayoutGenerator.generateSmartLayout(selectedPattern, numLayers);
 

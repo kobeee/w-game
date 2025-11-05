@@ -30,10 +30,7 @@ export class TimezoneSync {
                 const localTime = Date.now();
                 this.serverTimeOffset = serverTime - localTime;
 
-                console.log(`[TimezoneSync] ✅ 时间同步成功`);
-                console.log(`[TimezoneSync] 服务器时间: ${new Date(serverTime).toLocaleString('zh-CN')}`);
-                console.log(`[TimezoneSync] 本地时间: ${new Date(localTime).toLocaleString('zh-CN')}`);
-                console.log(`[TimezoneSync] 时间偏移: ${this.serverTimeOffset}ms`);
+                
 
                 return true;
             } else {

@@ -40,8 +40,6 @@ export class GameApp extends Component {
     private roundsCompleted: number = 0;
 
     protected async onLoad(): Promise<void> {
-        console.log('[GameApp] 游戏开始初始化');
-        
         await this.loadRemoteAssets(); // 动态加载远程资源
         await this.initializeGame();
         this.setupEventListeners();
@@ -63,7 +61,6 @@ export class GameApp extends Component {
         }
 
         const currentString = this.board.getCurrentString();
-        console.log('[GameApp] 提交单词:', currentString, '目标:', this.currentTargetWord);
 
         if (currentString === this.currentTargetWord) {
             this.onCorrectAnswer();
@@ -76,7 +73,6 @@ export class GameApp extends Component {
         try {
             // 检查是否使用完整词库
             const useFull = sys.localStorage.getItem('use_full_dictionary') === 'true';
-            console.log('[GameApp] 使用完整词库:', useFull);
 
             // 加载词库
             await this.glossService.load(useFull);
@@ -85,7 +81,6 @@ export class GameApp extends Component {
             const wordBankData = this.glossService.getWordBankData();
             if (wordBankData) {
                 this.wordBank.init(wordBankData);
-                console.log('[GameApp] 词库初始化成功');
             } else {
                 console.error('[GameApp] 词库数据为空');
             }
@@ -117,7 +112,6 @@ export class GameApp extends Component {
         if (this.glossSheet) {
             this.glossSheet.setStarCallback((word: string) => {
                 this.glossService.star(word);
-                console.log('[GameApp] 单词已收藏:', word);
             });
         }
     }
@@ -125,7 +119,6 @@ export class GameApp extends Component {
     private setupEndButton(): void {
         if (this.endButton) {
             this.endButton.node.on(Button.EventType.CLICK, this.onEndButtonClicked, this);
-            console.log('[GameApp] 结束游戏按钮事件已绑定');
         } else {
             console.warn('[GameApp] endButton 未设置，结束按钮功能不可用');
         }
@@ -140,11 +133,9 @@ export class GameApp extends Component {
         const parent = sheetNode.parent;
         const topIndex = parent.children.length - 1;
         sheetNode.setSiblingIndex(topIndex);
-        console.log('[GameApp] 词义卡节点层级已提升至最上方，确保覆盖底部按钮');
     }
 
     private onEndButtonClicked(): void {
-        console.log('[GameApp] 结束游戏按钮被点击，返回主菜单');
         this.exitToMenu();
     }
 
@@ -163,8 +154,6 @@ export class GameApp extends Component {
     }
 
     private startGame(): void {
-        console.log('[GameApp] 游戏开始');
-        
         this.isGameRunning = true;
         this.roundsCompleted = 0;
         
@@ -221,8 +210,6 @@ export class GameApp extends Component {
             console.error('[GameApp] 无法获取任何目标单词，游戏无法继续');
             return;
         }
-
-        console.log('[GameApp] 新回合开始，目标单词:', this.currentTargetWord);
         
         // 更新HUD显示目标词
         if (this.hud) {
@@ -236,8 +223,6 @@ export class GameApp extends Component {
     }
 
     private onBoardChange(currentString: string): void {
-        console.log('[GameApp] 棋盘选择变化:', currentString);
-        
         // 可以在这里添加实时反馈逻辑
         // 比如当字符串长度达到目标时自动提交
         if (currentString.length === this.currentTargetWord.length) {
@@ -259,8 +244,6 @@ export class GameApp extends Component {
     }
 
     private onCorrectAnswer(): void {
-        console.log('[GameApp] 回答正确!');
-        
         // 播放正确音效
         this.audioMgr.playCorrect();
         
@@ -278,9 +261,7 @@ export class GameApp extends Component {
         const zh = this.glossService.explain(this.currentTargetWord);
         
         // 将单词添加到生词本
-        console.log('[GameApp] 准备将单词添加到生词本:', this.currentTargetWord);
         this.glossService.star(this.currentTargetWord);
-        console.log('[GameApp] 单词已添加到生词本，当前生词本:', this.glossService.getSessionNotebook());
         
         // 记录到HUD以供信息按钮使用
         if (this.hud) {
@@ -301,8 +282,6 @@ export class GameApp extends Component {
     }
 
     private onWrongAnswer(): void {
-        console.log('[GameApp] 回答错误');
-        
         // 播放错误音效
         this.audioMgr.playWrong();
         
@@ -320,12 +299,9 @@ export class GameApp extends Component {
     }
 
     private endGame(): void {
-        console.log('[GameApp] 游戏结束');
         this.stopGameLoop();
         
         // 保存本局生词本（GlossService内部已处理）
-        console.log('[GameApp] 本局完成回合数:', this.roundsCompleted);
-        console.log('[GameApp] 最终分数:', this.hud?.getCurrentScore() || 0);
         
         // 跳转到结果页面
         director.loadScene('Result');
@@ -354,7 +330,6 @@ export class GameApp extends Component {
                 // 预加载词库Bundle（不需要立即使用，所以预加载即可）
                 this.preloadWordsBundle()
             ]);
-            console.log('[GameApp] 远程资源加载完成');
         } catch (error) {
             console.error('[GameApp] 远程资源加载失败:', error);
             // 可以加载本地备用资源或显示占位图
@@ -366,7 +341,6 @@ export class GameApp extends Component {
      */
     private preloadWordsBundle(): Promise<void> {
         return new Promise((resolve, reject) => {
-            console.log('[GameApp] 开始预加载words Bundle');
             assetManager.loadBundle('words', (err, bundle) => {
                 if (err) {
                     console.error('[GameApp] words Bundle加载失败:', err);
@@ -382,8 +356,6 @@ export class GameApp extends Component {
                         reject(err);
                         return;
                     }
-
-                    console.log('[GameApp] words Bundle预加载完成，包含资源:', assetsToLoad);
                     resolve();
                 });
             });
@@ -411,7 +383,6 @@ export class GameApp extends Component {
 
                     if (sprite) {
                         sprite.spriteFrame = spriteFrame;
-                        console.log(`[GameApp] 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
                     }
                     resolve();
                 });
@@ -431,6 +402,5 @@ export class GameApp extends Component {
             this.endButton.node.off(Button.EventType.CLICK, this.onEndButtonClicked, this);
         }
         
-        console.log('[GameApp] 组件销毁');
     }
 }

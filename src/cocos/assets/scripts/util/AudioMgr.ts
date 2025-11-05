@@ -51,17 +51,15 @@ export class AudioMgr {
      */
     init(): void {
         if (this.isInitialized) {
-            console.log('[AudioMgr] 音频管理器已初始化');
             return;
         }
 
-        console.log('[AudioMgr] 开始初始化音频管理器');
+        
         
         this.createAudioSource();
         this.loadAudioClips();
         
         this.isInitialized = true;
-        console.log('[AudioMgr] 音频管理器初始化完成');
     }
 
     /**
@@ -112,7 +110,7 @@ export class AudioMgr {
      */
     setMasterVolume(volume: number): void {
         this.masterVolume = Math.max(0, Math.min(1, volume));
-        console.log('[AudioMgr] 主音量设置为:', this.masterVolume);
+        
     }
 
     /**
@@ -133,7 +131,7 @@ export class AudioMgr {
             this.stopAllSounds();
         }
         
-        console.log('[AudioMgr] 音频', enabled ? '已启用' : '已禁用');
+        
     }
 
     /**
@@ -169,7 +167,6 @@ export class AudioMgr {
         this.audioSource = audioNode.getComponent(AudioSource) || audioNode.addComponent(AudioSource);
         
         if (this.audioSource) {
-            console.log('[AudioMgr] 音频源创建成功');
         } else {
             console.error('[AudioMgr] 音频源创建失败');
         }
@@ -191,7 +188,7 @@ export class AudioMgr {
             console.warn('[AudioMgr] 部分音频加载失败', error);
         }
         
-        console.log('[AudioMgr] 音频资源加载完成，成功加载', this.audioClips.size, '个音效');
+        
     }
 
     private loadSingleAudioClip(key: string, path: string): Promise<void> {
@@ -201,7 +198,6 @@ export class AudioMgr {
                     console.warn(`[AudioMgr] 加载音频失败: ${path}`, err.message || err);
                 } else {
                     this.audioClips.set(key, clip);
-                    console.log(`[AudioMgr] 成功加载音频: ${key}`);
                 }
                 resolve();
             });
@@ -239,8 +235,6 @@ export class AudioMgr {
 
             // 播放音频
             this.audioSource.play();
-
-            console.log(`[AudioMgr] 播放音效: ${key}`);
         } catch (error) {
             console.error(`[AudioMgr] 播放音效失败: ${key}`, error);
         }
@@ -256,7 +250,6 @@ export class AudioMgr {
 
         if (currentClip === targetClip) {
             this.audioSource.stop();
-            console.log(`[AudioMgr] 停止音效: ${key}`);
         }
     }
 
@@ -281,7 +274,6 @@ export class AudioMgr {
      */
     addAudioConfig(key: string, config: AudioConfig): void {
         this.audioConfigs[key] = config;
-        console.log(`[AudioMgr] 添加音效配置: ${key}`);
     }
 
     /**
@@ -291,7 +283,6 @@ export class AudioMgr {
     removeAudioConfig(key: string): void {
         delete this.audioConfigs[key];
         this.audioClips.delete(key);
-        console.log(`[AudioMgr] 移除音效配置: ${key}`);
     }
 
     /**
@@ -329,6 +320,6 @@ export class AudioMgr {
         this.audioSource = null;
         this.isInitialized = false;
         
-        console.log('[AudioMgr] 音频管理器已销毁');
+        
     }
 }

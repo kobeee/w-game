@@ -51,7 +51,7 @@ export class SmartLayoutGenerator {
         const baseLayer = this.generateBaseLayer(basePattern);
         layers.push(baseLayer);
 
-        console.log(`[SmartLayoutGenerator] 底层生成: ${basePattern}, 卡片数: ${baseLayer.positions.length}`);
+        
 
         // 2. 逐层生成上层（基于下层位置，按十字区域遮挡规则堆叠）
         for (let layerId = 1; layerId < numLayers; layerId++) {
@@ -63,7 +63,7 @@ export class SmartLayoutGenerator {
             );
             layers.push(upperLayer);
 
-            console.log(`[SmartLayoutGenerator] 第${layerId}层生成: 卡片数: ${upperLayer.positions.length}`);
+            
         }
 
         // 3. 验证同层不堆叠
@@ -145,7 +145,7 @@ export class SmartLayoutGenerator {
                 if (!this.hasOverlapInSameLayer(newPos, positions)) {
                     positions.push(newPos);
                 } else {
-                    console.log(`[SmartLayoutGenerator] 跳过位置 (${newPos.x}, ${newPos.y})：同层堆叠`);
+                    
                 }
             }
         }

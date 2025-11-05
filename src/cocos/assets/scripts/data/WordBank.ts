@@ -35,9 +35,6 @@ export class WordBank {
         const lengthDistribution = Object.keys(this.byLength).map(len => 
             `${len}字母:${this.byLength[len].length}词`
         ).join(', ');
-        
-        console.log(`[WordBank] 词库初始化完成，共${totalWords}个单词`);
-        console.log(`[WordBank] 长度分布: ${lengthDistribution}`);
     }
 
     /**
@@ -56,7 +53,7 @@ export class WordBank {
         const randomIndex = Math.floor(Math.random() * wordsOfLength.length);
         const selectedWord = wordsOfLength[randomIndex];
         
-        console.log(`[WordBank] 选择了${len}字母单词: ${selectedWord}`);
+        
         return selectedWord;
     }
 

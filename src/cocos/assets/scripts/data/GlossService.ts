@@ -16,9 +16,7 @@ export class GlossService {
     private loadingPromise: Promise<void> | null = null; // 正在加载的Promise（防止并发）
 
     constructor() {
-        console.log('[GlossService] 构造函数，初始化sessionNotebook为空数组');
         this.sessionNotebook = [];
-        console.log('[GlossService] 构造函数完成，sessionNotebook:', this.sessionNotebook, '类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
     }
 
     /**
@@ -38,28 +36,23 @@ export class GlossService {
     async load(useExtended: boolean = false): Promise<void> {
         // 如果正在加载中，等待之前的加载完成
         if (this.loadingPromise) {
-            console.log('[GlossService] 词库正在加载中，等待之前的加载完成...');
             await this.loadingPromise;
 
             // 检查是否需要加载扩展词库
             if (useExtended && !this.isExtendedLoaded) {
-                console.log('[GlossService] 核心词库已加载，继续加载扩展词库...');
                 // 继续执行后续逻辑
             } else {
-                console.log('[GlossService] 词库已加载，跳过重复加载');
                 return;
             }
         }
 
         // 如果核心词库已加载且不需要扩展词库，直接返回
         if (this.isCoreLoaded && !useExtended) {
-            console.log('[GlossService] 核心词库已加载，跳过');
             return;
         }
 
         // 如果核心和扩展词库都已加载，直接返回
         if (this.isCoreLoaded && this.isExtendedLoaded) {
-            console.log('[GlossService] 核心+扩展词库已全部加载，跳过');
             return;
         }
 
@@ -78,44 +71,38 @@ export class GlossService {
      * @private
      */
     private async performLoad(useExtended: boolean): Promise<void> {
-        console.log('[GlossService] ========== 开始加载词库 ==========');
-        console.log(`[GlossService] 扩展词库: ${useExtended ? '是' : '否'}`);
-        console.log(`[GlossService] 当前状态: 核心=${this.isCoreLoaded}, 扩展=${this.isExtendedLoaded}`);
+        
 
         try {
             // 步骤1：加载核心词库（仅在未加载时）
             if (!this.isCoreLoaded) {
-                console.log('[GlossService] 步骤1：加载核心词库（3-7字母）');
                 const coreWordsAsset = await this.loadJsonFromBundle('words', 'words_core');
                 const coreGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss');
 
                 // ✅ 调试：检查 coreWordsAsset 的完整结构
-                console.log('[GlossService] coreWordsAsset 对象:', coreWordsAsset);
-                console.log('[GlossService] coreWordsAsset 类型:', typeof coreWordsAsset);
+                
 
                 // ✅ 兼容性处理：有些情况下 JSON 数据可能直接在 asset 对象中
                 let jsonData = null;
                 if (coreWordsAsset) {
                     if (coreWordsAsset.json) {
                         jsonData = coreWordsAsset.json;
-                        console.log('[GlossService] 使用 asset.json 获取数据');
+                        
                     } else if ((coreWordsAsset as any)._nativeAsset) {
                         jsonData = (coreWordsAsset as any)._nativeAsset;
-                        console.log('[GlossService] 使用 asset._nativeAsset 获取数据');
+                        
                     } else if (typeof coreWordsAsset === 'object' && (coreWordsAsset as any).by_len) {
                         jsonData = coreWordsAsset;
-                        console.log('[GlossService] 直接使用 asset 对象作为数据');
+                        
                     }
                 }
 
-                console.log('[GlossService] 最终提取的 jsonData:', jsonData ? Object.keys(jsonData).slice(0, 3) : 'null');
+                
 
                 if (jsonData && jsonData.by_len) {
                     this.wordBank = jsonData;
                     this.isCoreLoaded = true; // 标记已加载
-                    console.log('[GlossService] ✅ 核心词库加载成功');
-                    console.log('[GlossService] wordBank结构:', Object.keys(this.wordBank));
-                    console.log('[GlossService] by_len键:', Object.keys(this.wordBank.by_len || {}));
+                    
                 } else {
                     console.error('[GlossService] ❌ 核心词库加载失败');
                     console.error('[GlossService] coreWordsAsset 为:', coreWordsAsset);
@@ -125,17 +112,15 @@ export class GlossService {
 
                 if (coreGlossAsset && coreGlossAsset.json) {
                     this.buildGlossDict(coreGlossAsset.json);
-                    console.log('[GlossService] ✅ 核心词义库加载成功');
                 } else {
                     console.error('[GlossService] ❌ 核心词义库加载失败');
                 }
             } else {
-                console.log('[GlossService] ℹ️ 核心词库已存在，跳过加载');
+                
             }
 
             // 步骤2：如果需要且未加载，加载扩展词库（8-10字母）
             if (useExtended && !this.isExtendedLoaded) {
-                console.log('[GlossService] 步骤2：加载扩展词库 (8-10字母)...');
                 const extWordsAsset = await this.loadJsonFromBundle('words', 'words_extended');
                 const extGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_extended');
 
@@ -143,7 +128,6 @@ export class GlossService {
                     // 合并扩展词库到现有词库
                     this.mergeWordBank(extWordsAsset.json);
                     this.isExtendedLoaded = true; // 标记已加载
-                    console.log('[GlossService] ✅ 扩展词库加载成功，已合并');
                 } else {
                     console.warn('[GlossService] ⚠️ 扩展词库加载失败，将仅使用核心词库');
                 }
@@ -151,12 +135,11 @@ export class GlossService {
                 if (extGlossAsset && extGlossAsset.json) {
                     // 合并扩展词义库
                     this.mergeGlossDict(extGlossAsset.json);
-                    console.log('[GlossService] ✅ 扩展词义库加载成功，已合并');
                 } else {
                     console.warn('[GlossService] ⚠️ 扩展词义库加载失败');
                 }
             } else if (useExtended && this.isExtendedLoaded) {
-                console.log('[GlossService] ℹ️ 扩展词库已存在，跳过加载');
+                
             }
 
             // 步骤3：打印最终词库统计
@@ -167,8 +150,7 @@ export class GlossService {
                 this.loadSessionNotebook();
             }
 
-            console.log('[GlossService] ========== 词库加载完成 ==========');
-            console.log(`[GlossService] 最终状态: 核心=${this.isCoreLoaded}, 扩展=${this.isExtendedLoaded}`);
+            
 
         } catch (error) {
             console.error('[GlossService] ❌ 加载失败:', error);
@@ -211,18 +193,14 @@ export class GlossService {
      * @param word 单词
      */
     star(word: string): void {
-        console.log('[GlossService] star方法开始，输入单词:', word);
-        console.log('[GlossService] star方法，当前sessionNotebook:', this.sessionNotebook, '类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
         
         const upperWord = word.toUpperCase();
         if (this.sessionNotebook.indexOf(upperWord) === -1) {
-            console.log('[GlossService] 单词不存在，准备添加:', upperWord);
             this.sessionNotebook.push(upperWord);
-            console.log('[GlossService] 添加后的sessionNotebook:', this.sessionNotebook, '类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
             this.saveSessionNotebook();
-            console.log(`[GlossService] 收藏单词: ${upperWord}`);
+            
         } else {
-            console.log('[GlossService] 单词已存在，跳过:', upperWord);
+            
         }
     }
 
@@ -231,8 +209,6 @@ export class GlossService {
      * @returns 去重的单词数组
      */
     getSessionNotebook(): string[] {
-        console.log('[GlossService] 获取生词本，当前内容:', this.sessionNotebook);
-        console.log('[GlossService] 内容类型:', typeof this.sessionNotebook, Array.isArray(this.sessionNotebook));
         return Array.isArray(this.sessionNotebook) ? [...this.sessionNotebook] : [];
     }
 
@@ -242,7 +218,6 @@ export class GlossService {
     clearSessionNotebook(): void {
         this.sessionNotebook = [];
         sys.localStorage.removeItem('notebook_session');
-        console.log('[GlossService] 已清空本局生词本');
     }
 
     /**
@@ -253,17 +228,15 @@ export class GlossService {
             typeof item === 'string' && item.trim() !== ''
         );
         this.saveSessionNotebook();
-        console.log('[GlossService] 生词本数据修复完成');
     }
 
     /**
      * 强制重置生词本（用于调试）
      */
     resetSessionNotebook(): void {
-        console.log('[GlossService] 强制重置生词本');
         this.sessionNotebook = [];
         sys.localStorage.removeItem('notebook_session');
-        console.log('[GlossService] 生词本已重置完成');
+        
     }
 
     /**
@@ -294,7 +267,6 @@ export class GlossService {
             }
         }
 
-        console.log(`[GlossService] getAllWords返回 ${allWords.length} 个单词`);
         return allWords;
     }
 
@@ -329,25 +301,21 @@ export class GlossService {
      */
     private async loadJsonFromBundle(bundleName: string, assetPath: string): Promise<JsonAsset | null> {
         return new Promise((resolve) => {
-            console.log(`[GlossService.loadJsonFromBundle] >>> 开始加载 ${bundleName}/${assetPath}`);
 
             // ✅ 步骤1：检查Bundle是否已缓存（使用官方API）
             let bundle = assetManager.getBundle(bundleName);
 
             if (bundle) {
-                console.log(`[GlossService.loadJsonFromBundle] ✅ Bundle '${bundleName}' 已缓存`);
 
                 // ✅ 步骤2：检查资源是否已完全加载
                 const cachedAsset = bundle.get(assetPath, JsonAsset);
 
                 if (cachedAsset) {
-                    console.log(`[GlossService.loadJsonFromBundle] ✅ 资源 '${assetPath}' 已缓存，立即返回`);
-                    console.log(`[GlossService.loadJsonFromBundle] 资源数据:`, cachedAsset.json ? Object.keys(cachedAsset.json).slice(0, 3) : 'null');
                     resolve(cachedAsset);
                     return;
                 }
 
-                console.log(`[GlossService.loadJsonFromBundle] ⚠️ 资源 '${assetPath}' 未缓存，动态加载`);
+                
 
                 // ✅ 步骤3：资源未缓存，动态加载
                 // 尝试直接用 bundle.load 加载
@@ -361,7 +329,7 @@ export class GlossService {
                                 console.error(`[GlossService.loadJsonFromBundle] ❌ Text 加载也失败:`, textErr);
                                 resolve(null);
                             } else {
-                                console.log(`[GlossService.loadJsonFromBundle] ✅ Text 加载成功，手动解析JSON`);
+                                
                                 try {
                                     const jsonData = JSON.parse(textAsset.text);
                                     // 创建一个伪 JsonAsset 对象
@@ -374,18 +342,16 @@ export class GlossService {
                             }
                         });
                     } else {
-                        console.log(`[GlossService.loadJsonFromBundle] ✅ 动态加载成功: ${bundleName}/${assetPath}`);
-                        console.log(`[GlossService.loadJsonFromBundle] 资源数据:`, asset.json ? Object.keys(asset.json).slice(0, 3) : 'null');
+                        
                         resolve(asset);
                     }
                 });
 
             } else {
-                console.error(`[GlossService.loadJsonFromBundle] ❌ Bundle '${bundleName}' 未缓存！这是严重错误`);
-                console.error(`[GlossService.loadJsonFromBundle] 当前缓存的Bundle:`, assetManager['bundles'] ? Object.keys(assetManager['bundles']) : '无法获取');
+                console.warn(`[GlossService.loadJsonFromBundle] ⚠️ Bundle '${bundleName}' 未缓存，将动态加载`);
 
                 // ✅ 步骤4：Bundle未缓存，加载Bundle
-                console.log(`[GlossService.loadJsonFromBundle] 尝试重新加载 Bundle '${bundleName}'...`);
+                
                 assetManager.loadBundle(bundleName, (err, newBundle) => {
                     if (err) {
                         console.error(`[GlossService.loadJsonFromBundle] ❌ Bundle加载失败:`, err);
@@ -393,7 +359,6 @@ export class GlossService {
                         return;
                     }
 
-                    console.log(`[GlossService.loadJsonFromBundle] ✅ Bundle加载成功`);
 
                     // ✅ 步骤5：加载资源
                     newBundle.load(assetPath, JsonAsset, (loadErr, asset) => {
@@ -401,8 +366,7 @@ export class GlossService {
                             console.error(`[GlossService.loadJsonFromBundle] ❌ 资源加载失败: ${bundleName}/${assetPath}`, loadErr);
                             resolve(null);
                         } else {
-                            console.log(`[GlossService.loadJsonFromBundle] ✅ 资源加载成功: ${bundleName}/${assetPath}`);
-                            console.log(`[GlossService.loadJsonFromBundle] 资源数据:`, asset.json ? Object.keys(asset.json).slice(0, 3) : 'null');
+                            
                             resolve(asset);
                         }
                     });
@@ -489,9 +453,7 @@ export class GlossService {
             }
         }
 
-        console.log(`[GlossService] 词库统计 - 总计: ${totalWords}个单词`);
-        console.log(`[GlossService] 词库明细: ${stats.join(', ')}`);
-        console.log(`[GlossService] 词义数量: ${this.glossDict.size}条`);
+        
     }
 
     private buildGlossDict(glossData: any): void {
@@ -505,7 +467,7 @@ export class GlossService {
                     }
                 }
             }
-            console.log(`[GlossService] 词义字典构建完成，共${this.glossDict.size}条记录`);
+            
         }
     }
 
@@ -518,14 +480,11 @@ export class GlossService {
                 if (Array.isArray(parsed)) {
                     // 过滤出有效的字符串
                     this.sessionNotebook = parsed.filter(item => typeof item === 'string' && item.trim() !== '');
-                    console.log('[GlossService] 过滤后的生词本:', this.sessionNotebook, '类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
                     
                     // 去重 - 确保结果是数组
                     const uniqueSet = new Set(this.sessionNotebook);
-                    console.log('[GlossService] 去重Set对象:', uniqueSet, '类型:', typeof uniqueSet);
                     this.sessionNotebook = Array.from(uniqueSet);
-                    console.log('[GlossService] 去重后的生词本:', this.sessionNotebook, '类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
-                    console.log(`[GlossService] 加载本局生词本，共${this.sessionNotebook.length}个单词`);
+                    
                     
                     // 如果有无效数据被过滤掉，保存修复后的数据
                     if (this.sessionNotebook.length !== parsed.length) {
@@ -551,8 +510,7 @@ export class GlossService {
                 this.sessionNotebook = [];
             }
             
-            console.log('[GlossService] 准备保存生词本:', this.sessionNotebook);
-            console.log('[GlossService] 保存前检查：是否为数组:', Array.isArray(this.sessionNotebook), '长度:', this.sessionNotebook.length);
+            
             
             // 使用自定义replacer函数处理可能的Set对象
             const jsonStr = JSON.stringify(this.sessionNotebook, (key, value) => {
@@ -563,7 +521,7 @@ export class GlossService {
                 return value;
             });
             
-            console.log('[GlossService] 保存JSON字符串:', jsonStr);
+            
             
             // 验证序列化结果
             if (jsonStr === '{}' || jsonStr === '[{}]') {
@@ -571,7 +529,6 @@ export class GlossService {
                 const safeArray = Array.isArray(this.sessionNotebook) ? this.sessionNotebook : [];
                 const safeJsonStr = JSON.stringify(safeArray);
                 sys.localStorage.setItem('notebook_session', safeJsonStr);
-                console.log('[GlossService] 使用安全序列化:', safeJsonStr);
             } else {
                 sys.localStorage.setItem('notebook_session', jsonStr);
             }

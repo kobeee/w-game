@@ -67,7 +67,7 @@ export class LayerBasedLayoutGenerator {
         const baseLayer = this.generateBaseLayer(cardsPerLayer[0]);
         layers.push(baseLayer);
 
-        console.log(`[LayerBasedLayoutGenerator] 底层生成完成: ${baseLayer.positions.length}张卡片`);
+        
 
         // 2. 逐层向上生成（基于下层坐标）
         for (let layerId = 1; layerId < numLayers; layerId++) {
@@ -82,7 +82,7 @@ export class LayerBasedLayoutGenerator {
 
             layers.push(upperLayer);
 
-            console.log(`[LayerBasedLayoutGenerator] 第${layerId}层生成完成: ${upperLayer.positions.length}张卡片`);
+            
         }
 
         const totalCards = layers.reduce((sum, layer) => sum + layer.positions.length, 0);
@@ -175,11 +175,6 @@ export class LayerBasedLayoutGenerator {
             // 检查同层冲突
             if (!this.hasConflictInSameLayer(newPos, positions)) {
                 positions.push(newPos);
-                console.log(
-                    `[LayerBasedLayoutGenerator] 第${layerId}层添加卡片: ` +
-                    `基于(${basePos.x.toFixed(1)}, ${basePos.y.toFixed(1)}) + ${offset.name} → ` +
-                    `(${newPos.x.toFixed(1)}, ${newPos.y.toFixed(1)})`
-                );
             } else {
                 // 尝试其他偏移
                 let added = false;
@@ -196,16 +191,11 @@ export class LayerBasedLayoutGenerator {
                     if (!this.hasConflictInSameLayer(altPos, positions)) {
                         positions.push(altPos);
                         added = true;
-                        console.log(
-                            `[LayerBasedLayoutGenerator] 第${layerId}层添加卡片（备选偏移）: ` +
-                            `${altOffset.name} → (${altPos.x.toFixed(1)}, ${altPos.y.toFixed(1)})`
-                        );
                         break;
                     }
                 }
 
                 if (!added) {
-                    console.log(`[LayerBasedLayoutGenerator] 第${layerId}层跳过位置: 所有偏移都冲突`);
                 }
             }
         }

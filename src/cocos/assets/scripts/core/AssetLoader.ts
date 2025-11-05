@@ -30,22 +30,19 @@ export class AssetLoader {
             let bundle = assetManager.getBundle(bundleName);
             
             if (bundle) {
-                console.log(`[AssetLoader] 使用缓存的Bundle: ${bundleName}`);
                 
                 // 第二步：使用bundle.get()获取已完全加载的资源（立即可用）
                 const cachedAsset = bundle.get(assetPath, SpriteFrame);
                 if (cachedAsset) {
-                    console.log(`[AssetLoader] ✅ 立即获取已缓存的SpriteFrame: ${bundleName}/${assetPath}`);
                     return cachedAsset;
                 }
                 
                 // 第三步：如果资源未完全加载，进行完全加载
-                console.log(`[AssetLoader] ⚠️ 资源未完全加载，开始完全加载: ${bundleName}/${assetPath}`);
                 return await this.loadAssetFromBundle(bundle, assetPath);
             }
             
             // 第四步：Bundle未缓存，需要动态加载Bundle
-            console.log(`[AssetLoader] ⚠️ Bundle未缓存，开始动态加载: ${bundleName}`);
+            console.warn(`[AssetLoader] ⚠️ Bundle未缓存，开始动态加载: ${bundleName}`);
             bundle = await this.loadBundle(bundleName);
             
             // 第五步：从新加载的Bundle中完全加载资源
@@ -69,7 +66,7 @@ export class AssetLoader {
                     return;
                 }
                 
-                console.log(`[AssetLoader] Bundle加载成功: ${bundleName}`);
+                
                 resolve(bundle);
             });
         });
@@ -87,7 +84,7 @@ export class AssetLoader {
                     return;
                 }
                 
-                console.log(`[AssetLoader] 资源加载成功: ${assetPath}`);
+                
                 resolve(spriteFrame);
             });
         });

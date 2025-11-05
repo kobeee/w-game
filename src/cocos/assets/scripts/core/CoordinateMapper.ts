@@ -155,11 +155,6 @@ export class CoordinateMapper {
         const worldPos = this.gridToWorld(gridRow, gridCol, offset, gridSize);
         const reverseGrid = this.worldToGrid(worldPos, gridSize);
 
-        console.log('[CoordinateMapper] 坐标转换调试:');
-        console.log(`  输入 - 网格: (${gridRow}, ${gridCol}), 偏移: (${offset.x}, ${offset.y})`);
-        console.log(`  输出 - 世界: (${worldPos.x}, ${worldPos.y}, ${worldPos.z})`);
-        console.log(
-            `  反向 - 网格: (${reverseGrid.row}, ${reverseGrid.col}), 偏移: (${reverseGrid.offset.x.toFixed(2)}, ${reverseGrid.offset.y.toFixed(2)})`
-        );
+        
     }
 }

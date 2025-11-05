@@ -39,7 +39,6 @@ export class LoadingUI extends Component {
     private preloadManager: PreloadManager = null!;
     
     protected onLoad(): void {
-        console.log('[LoadingUI] LoadingUI组件已加载');
         this.preloadManager = PreloadManager.getInstance();
         this.initializeUI();
     }
@@ -72,14 +71,12 @@ export class LoadingUI extends Component {
         // Logo呼吸动画
         this.startLogoAnimation();
         
-        console.log('[LoadingUI] UI初始化完成');
     }
     
     /**
      * 开始加载流程
      */
     private async startLoading(): Promise<void> {
-        console.log('[LoadingUI] 开始预加载流程');
 
         // 设置进度回调
         this.preloadManager.setProgressCallback(this.onLoadingProgress.bind(this));
@@ -89,7 +86,6 @@ export class LoadingUI extends Component {
             await this.preloadManager.preloadAllBundles();
 
             // PreloadManager已在preloadAllBundles()中加载词库，无需重复
-            console.log('[LoadingUI] Bundle预加载完成，词库已随Bundle一起加载');
             this.updateStatus(0.9, 'Bundle和词库加载完成');
 
             // 验证词库是否加载成功
@@ -104,13 +100,12 @@ export class LoadingUI extends Component {
 
                 const retryWords = glossService.getAllWords();
                 if (retryWords.length > 0) {
-                    console.log(`[LoadingUI] ✅ 词库修复成功，共 ${retryWords.length} 个单词`);
+                    
                 } else {
                     console.error('[LoadingUI] ❌ 词库修复失败，游戏可能无法正常运行');
                 }
             }
 
-            console.log('[LoadingUI] 所有资源加载完成');
             this.updateStatus(1.0, '所有资源加载完成！');
 
             // 加载完成，延迟一下再跳转
@@ -146,7 +141,6 @@ export class LoadingUI extends Component {
      * 加载进度回调
      */
     private onLoadingProgress(progress: number, message: string): void {
-        console.log(`[LoadingUI] 加载进度: ${(progress * 100).toFixed(1)}% - ${message}`);
         
         // 更新进度条
         if (this.progressBar && this.progressBar.node && this.progressBar.node.isValid) {
@@ -222,7 +216,6 @@ export class LoadingUI extends Component {
      * 跳转到主菜单
      */
     private navigateToMainMenu(): void {
-        console.log('[LoadingUI] 预加载完成，跳转到主菜单');
         
         // 添加淡出效果
         if (this.node && this.node.isValid) {
@@ -261,6 +254,5 @@ export class LoadingUI extends Component {
             Tween.stopAllByTarget(this.node);
         }
         
-        console.log('[LoadingUI] LoadingUI组件已清理');
     }
 }

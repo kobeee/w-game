@@ -18,7 +18,7 @@ export class LoadingScene extends Component {
     private startTime: number = 0;
     
     protected onLoad(): void {
-        console.log('[LoadingScene] 加载场景启动');
+        
         this.startTime = Date.now();
         
         // 检查网络状态
@@ -43,7 +43,7 @@ export class LoadingScene extends Component {
         if (typeof wx !== 'undefined') {
             wx.getNetworkType({
                 success: (res) => {
-                    console.log('[LoadingScene] 网络类型:', res.networkType);
+                    
                     if (res.networkType === 'none') {
                         console.warn('[LoadingScene] 当前无网络连接，将使用缓存资源');
                     }
@@ -59,7 +59,6 @@ export class LoadingScene extends Component {
             const testKey = 'loading_test';
             sys.localStorage.setItem(testKey, 'test');
             sys.localStorage.removeItem(testKey);
-            console.log('[LoadingScene] 本地存储功能正常');
         } catch (error) {
             console.warn('[LoadingScene] 本地存储功能异常:', error);
         }
@@ -73,7 +72,7 @@ export class LoadingScene extends Component {
         const remainingTime = this.MIN_LOADING_TIME - elapsedTime;
         
         if (remainingTime > 0) {
-            console.log(`[LoadingScene] 等待最短加载时间: ${remainingTime.toFixed(1)}秒`);
+            
             return new Promise(resolve => {
                 this.scheduleOnce(() => {
                     resolve();
@@ -86,7 +85,7 @@ export class LoadingScene extends Component {
      * 处理加载完成
      */
     public async onLoadingComplete(): Promise<void> {
-        console.log('[LoadingScene] 预加载流程完成');
+        
         
         // 确保最短加载时间
         await this.ensureMinLoadingTime();
@@ -111,6 +110,6 @@ export class LoadingScene extends Component {
     protected onDestroy(): void {
         // 清理定时器
         this.unscheduleAllCallbacks();
-        console.log('[LoadingScene] 加载场景已清理');
+        
     }
 }

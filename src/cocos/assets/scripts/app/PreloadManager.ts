@@ -75,7 +75,6 @@ export class PreloadManager {
      * 开始完全加载所有远程Bundle（确保立即可用）
      */
     public async preloadAllBundles(): Promise<void> {
-        console.log('[PreloadManager] 开始完全加载所有Asset Bundle（包括反序列化和初始化）...');
         this.reportProgress(0, '正在初始化完全资源加载...');
 
         try {
@@ -93,7 +92,6 @@ export class PreloadManager {
             await this.preloadBundleGroup(lowPriorityBundles, 0.7, 1.0);
 
             this.reportProgress(1.0, '所有资源完全加载完成，立即可用');
-            console.log('[PreloadManager] 🎉 所有Bundle完全加载完成，资源立即可用');
 
         } catch (error) {
             console.error('[PreloadManager] Bundle完全加载失败:', error);
@@ -107,8 +105,7 @@ export class PreloadManager {
      * @param useExtended 是否加载扩展词库（默认true，一次性加载全部）
      */
     private async loadGlossData(useExtended: boolean = true): Promise<void> {
-        console.log('[PreloadManager] ===== 词库加载启动 =====');
-        console.log(`[PreloadManager] 加载模式: ${useExtended ? '核心+扩展' : '仅核心'}`);
+        
 
         try {
             // 检查 Bundle 是否已加载
@@ -118,22 +115,18 @@ export class PreloadManager {
                 console.error('[PreloadManager] PreloadManager.preloadAllBundles() 应该已加载 words Bundle');
                 return;
             }
-            console.log('[PreloadManager] ✅ words Bundle 已加载');
+            
 
             // 直接调用 GlossService（不使用动态import）
             const glossService = GlossService.getInstance();
-            console.log(`[PreloadManager] 初始状态: 核心=${glossService.getLoadStatus().core}, 扩展=${glossService.getLoadStatus().extended}`);
 
             // 一次性加载核心+扩展词库（避免二次加载）
-            console.log('[PreloadManager] 开始调用 GlossService.load()...');
             await glossService.load(useExtended);
 
             const allWords = glossService.getAllWords();
             const loadStatus = glossService.getLoadStatus();
 
-            console.log(`[PreloadManager] ✅ 词库数据加载完成`);
-            console.log(`[PreloadManager] 单词数: ${allWords.length}`);
-            console.log(`[PreloadManager] 加载状态: 核心=${loadStatus.core}, 扩展=${loadStatus.extended}`);
+            
 
             if (allWords.length === 0) {
                 console.error('[PreloadManager] ❌ 词库为空！');
@@ -147,7 +140,7 @@ export class PreloadManager {
             console.error('[PreloadManager] ❌ 词库数据加载失败:', error);
             console.error('[PreloadManager] 错误堆栈:', error instanceof Error ? error.stack : '');
         }
-        console.log('[PreloadManager] ===== 词库加载完成 =====');
+        
     }
     
     /**
@@ -173,7 +166,6 @@ export class PreloadManager {
      */
     private async preloadSingleBundle(bundleName: string, startProgress: number, endProgress: number): Promise<void> {
         return new Promise<void>((resolve, reject) => {
-            console.log(`[PreloadManager.preloadSingleBundle] 开始加载Bundle: ${bundleName}`);
             this.reportProgress(startProgress, `正在加载 ${bundleName} 资源包...`);
 
             // 首先加载Bundle
@@ -185,7 +177,7 @@ export class PreloadManager {
                     return;
                 }
 
-                console.log(`[PreloadManager.preloadSingleBundle] ✅ Bundle '${bundleName}' 加载成功`);
+                
                 this.loadedBundles.set(bundleName, bundle);
 
                 // 验证Bundle是否在官方缓存中
@@ -201,7 +193,7 @@ export class PreloadManager {
                 // 预加载Bundle内的关键资源
                 this.preloadBundleAssets(bundle, bundleName, midProgress, endProgress)
                     .then(() => {
-                        console.log(`[PreloadManager.preloadSingleBundle] ✅ Bundle '${bundleName}' 和内部资源加载完成`);
+                        
                         resolve();
                     })
                     .catch((error) => {
@@ -252,7 +244,7 @@ export class PreloadManager {
                     console.warn(`[PreloadManager] 完全加载资源 ${bundleName}/${assetPath} 失败:`, err);
                     reject(err);
                 } else {
-                    console.log(`[PreloadManager] 完全加载资源 ${bundleName}/${assetPath} 成功，立即可用`);
+                    
                     resolve();
                 }
             });
@@ -266,15 +258,11 @@ export class PreloadManager {
         // 使用官方API获取已缓存的Bundle
         const bundle = assetManager.getBundle(bundleName);
         if (bundle) {
-            console.log(`[PreloadManager] 从缓存获取Bundle: ${bundleName}`);
             return bundle;
         }
         
         // 降级检查自维护的Map（向后兼容）
         const localBundle = this.loadedBundles.get(bundleName);
-        if (localBundle) {
-            console.log(`[PreloadManager] 从本地Map获取Bundle: ${bundleName}`);
-        }
         return localBundle || null;
     }
     

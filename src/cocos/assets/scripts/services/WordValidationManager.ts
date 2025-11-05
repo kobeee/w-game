@@ -37,12 +37,11 @@ export class WordValidationManager {
     async initialize(): Promise<void> {
         if (this.isInitialized) return;
 
-        console.log('[WordValidationManager] 初始化...');
+        
 
         try {
             await this.validator.initialize();
             this.isInitialized = true;
-            console.log('[WordValidationManager] ✅ 初始化完成');
         } catch (error) {
             console.error('[WordValidationManager] ❌ 初始化失败:', error);
             throw error;
@@ -59,7 +58,7 @@ export class WordValidationManager {
     async validateConcurrent(word: string): Promise<ValidateResult> {
         const upperWord = word.toUpperCase();
 
-        console.log(`[WordValidationManager] 开始验证: ${upperWord}`);
+        
 
         // 更新待验证状态
         this.pendingValidation = {
@@ -76,11 +75,7 @@ export class WordValidationManager {
             this.pendingValidation.state = 'completed';
             this.pendingValidation.result = result;
 
-            console.log(
-                `[WordValidationManager] ✅ 验证完成: ${upperWord} ` +
-                `→ ${result.valid ? '有效' : '无效'} ` +
-                `(${result.source}, ${result.latency}ms)`
-            );
+            
 
             return result;
         } catch (error) {

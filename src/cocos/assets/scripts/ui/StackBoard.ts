@@ -33,7 +33,6 @@ export class StackBoard extends Component {
         if (parent) {
             this.slotQueue = parent.getComponentInChildren(SlotQueue);
             if (this.slotQueue) {
-                console.log('[StackBoard] 成功获取SlotQueue组件引用');
             } else {
                 console.warn('[StackBoard] 未找到SlotQueue组件，飞行缩放将使用默认值1.0');
             }
@@ -124,7 +123,6 @@ export class StackBoard extends Component {
 
         // ✅ 修复：监听LetterTile发射的自定义事件，而非直接监听TOUCH_END
         tileNode.on('tile:clicked', (letterTile: LetterTile) => {
-            console.log(`[StackBoard] 接收到tile:clicked事件, 卡片ID: ${card.id}`);
             this.onTileClick(card.id);
         }, this);
 
@@ -170,7 +168,6 @@ export class StackBoard extends Component {
 
         // 检查是否可点击
         if (card.blocked || card.removed) {
-            console.log(`卡片${cardId}不可点击: blocked=${card.blocked}, removed=${card.removed}`);
             return;
         }
 
@@ -207,12 +204,11 @@ export class StackBoard extends Component {
         // 临时提升siblingIndex到最大值，确保飞行中的卡片不被任何节点遮挡
         const originalIndex = tileNode.getSiblingIndex();
         tileNode.setSiblingIndex(9999);
-        console.log(`[StackBoard] 卡片${cardId}飞行开始，siblingIndex从${originalIndex}提升至9999`);
 
         // ✅ 新增：获取目标slot的缩放比例
         const targetScale = this.slotQueue ? this.slotQueue.getCurrentScale() : 1.0;
 
-        console.log(`[StackBoard] 卡片${cardId}飞行目标缩放：${targetScale}`);
+        
 
         // 飞向牌槽动画
         return new Promise<Node>((resolve) => {
@@ -222,8 +218,6 @@ export class StackBoard extends Component {
                 .call(() => {
                     // ✅ 注释：不需要恢复originalIndex，因为节点即将被转移到SlotQueue
                     // tileNode.setSiblingIndex(originalIndex);
-
-                    console.log(`[StackBoard] 卡片${cardId}飞行动画完成，返回节点`);
 
                     // 从映射表中移除（因为节点将被转移到SlotQueue）
                     this.tileNodes.delete(cardId);

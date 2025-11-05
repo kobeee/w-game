@@ -38,7 +38,7 @@ export class ResultPage extends Component {
     private sessionNotebook: string[] = [];
 
     protected async onLoad(): Promise<void> {
-        console.log('[ResultPage] 结果页面初始化');
+        
         
         // 初始化GlossService实例
         this.glossService = new GlossService();
@@ -89,7 +89,6 @@ export class ResultPage extends Component {
             
             // 直接从localStorage读取生词本数据
             const stored = sys.localStorage.getItem('notebook_session');
-            console.log('[ResultPage] 从localStorage读取生词本数据:', stored);
             
             if (stored) {
                 try {
@@ -100,17 +99,13 @@ export class ResultPage extends Component {
                             .filter(item => typeof item === 'string' && item.trim() !== '')
                             .map(item => item.trim().toUpperCase());
                         
-                        console.log('[ResultPage] 过滤后的数组:', filteredArray, '类型:', typeof filteredArray, '是数组:', Array.isArray(filteredArray));
+                        
                         
                         // 使用Array.from而不是扩展运算符，确保微信小游戏兼容性
                         const uniqueSet = new Set(filteredArray);
-                        console.log('[ResultPage] 去重Set对象:', uniqueSet, '类型:', typeof uniqueSet);
                         
                         this.sessionNotebook = Array.from(uniqueSet);
-                        console.log('[ResultPage] 去重后的数组:', this.sessionNotebook, '类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
                         
-                        console.log('[ResultPage] 本局生词本加载完成，单词数量:', this.sessionNotebook.length);
-                        console.log('[ResultPage] 单词列表:', this.sessionNotebook);
                     } else {
                         console.warn('[ResultPage] 生词本数据格式不正确，期待数组，实际:', typeof parsed, parsed);
                         this.sessionNotebook = [];
@@ -120,7 +115,7 @@ export class ResultPage extends Component {
                     this.sessionNotebook = [];
                 }
             } else {
-                console.log('[ResultPage] 没有找到生词本数据');
+                
                 this.sessionNotebook = [];
             }
             
@@ -143,18 +138,15 @@ export class ResultPage extends Component {
             this.titleLabel.string = totalWords > 0 ? '游戏结果 - 生词本' : '游戏结果 - 暂无生词';
         }
         
-        console.log('[ResultPage] 统计信息显示:', statsText);
+        
     }
 
     private displayNotebook(): void {
-        console.log('[ResultPage] displayNotebook开始，sessionNotebook:', this.sessionNotebook);
-        console.log('[ResultPage] sessionNotebook类型:', typeof this.sessionNotebook, '是数组:', Array.isArray(this.sessionNotebook));
-        console.log('[ResultPage] sessionNotebook长度:', this.sessionNotebook.length);
+        
         
         // 详细检查每个元素
         if (Array.isArray(this.sessionNotebook)) {
-            this.sessionNotebook.forEach((item, index) => {
-                console.log(`[ResultPage] 元素[${index}]:`, item, '类型:', typeof item, '是字符串:', typeof item === 'string');
+            this.sessionNotebook.forEach((_item, _index) => {
             });
         }
         
@@ -181,7 +173,7 @@ export class ResultPage extends Component {
             }
         }
 
-        console.log('[ResultPage] 生词本显示完成，条目数量:', this.sessionNotebook.length);
+        
     }
 
     private createEmptyStateNode(): void {
@@ -237,7 +229,6 @@ export class ResultPage extends Component {
         try {
             // 加载结果页背景Bundle - 必须指定到spriteFrame子资源
             await this.loadRemoteBundle('bg', 'result_scene_bg/spriteFrame', this.backgroundSprite);
-            console.log('[ResultPage] 远程背景资源加载完成');
         } catch (error) {
             console.error('[ResultPage] 远程资源加载失败:', error);
             // 可以加载本地备用资源或显示占位图
@@ -265,7 +256,6 @@ export class ResultPage extends Component {
 
                     if (sprite) {
                         sprite.spriteFrame = spriteFrame;
-                        console.log(`[ResultPage] 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
                     }
                     resolve();
                 });
@@ -287,7 +277,7 @@ export class ResultPage extends Component {
 
 
     private onInfoButtonClicked(word: string): void {
-        console.log('[ResultPage] 查看详细词义:', word);
+        
         
         if (this.glossSheet) {
             const zh = this.glossService.explain(word);
@@ -296,7 +286,7 @@ export class ResultPage extends Component {
     }
 
     private onClearNotebook(): void {
-        console.log('[ResultPage] 清空生词本');
+        
         
         // 显示确认对话框（简化版本）
         this.showClearConfirmation();
@@ -304,7 +294,7 @@ export class ResultPage extends Component {
 
     private showClearConfirmation(): void {
         // 简化的确认逻辑
-        console.log('[ResultPage] 确认清空生词本');
+        
         
         // 使用 GlossService 清空生词本
         this.glossService.clearSessionNotebook();
@@ -314,14 +304,13 @@ export class ResultPage extends Component {
         this.displayStatistics();
         this.displayNotebook();
         
-        console.log('[ResultPage] 生词本已清空');
+        
     }
 
     private onReturnToMenu(): void {
-        console.log('[ResultPage] 返回主菜单');
+        
         
         director.loadScene('MainMenu', () => {
-            console.log('[ResultPage] 成功返回主菜单');
         });
     }
 
@@ -339,7 +328,6 @@ export class ResultPage extends Component {
         };
         
         const jsonString = JSON.stringify(exportData, null, 2);
-        console.log('[ResultPage] 导出生词本数据:', jsonString);
         
         return jsonString;
     }
@@ -363,7 +351,7 @@ export class ResultPage extends Component {
             this.returnButton.node.off(Button.EventType.CLICK, this.onReturnToMenu, this);
         }
         
-        console.log('[ResultPage] 结果页面组件销毁');
+        
     }
 
     /**

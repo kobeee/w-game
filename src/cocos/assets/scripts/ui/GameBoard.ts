@@ -37,7 +37,6 @@ export class GameBoard extends Component {
         // 强制确保网格为5×5
         this.rows = 5;
         this.cols = 5;
-        console.log('[GameBoard] 强制设置网格大小为5×5，当前rows:', this.rows, 'cols:', this.cols);
         
         this.setupContainer();
     }
@@ -73,8 +72,7 @@ export class GameBoard extends Component {
         // 创建UI瓦片
         this.createTileNodes();
         
-        console.log('[GameBoard] 网格生成完成，目标词:', this.currentTargetWord);
-        this.printGrid(); // 调试用
+        
     }
 
     /**
@@ -147,13 +145,13 @@ export class GameBoard extends Component {
             return;
         }
         
-        console.log('[GameBoard] 设置容器（不使用Layout，直接定位瓦片）...');
+        
         
         // 移除Layout组件（如果存在），我们直接控制瓦片位置
         const existingLayout = this.container.getComponent(Layout);
         if (existingLayout) {
             existingLayout.destroy();
-            console.log('[GameBoard] 已移除Layout组件，改用直接定位');
+            
         }
         
         // 设置容器为固定尺寸，确保Widget能正确居中
@@ -164,10 +162,9 @@ export class GameBoard extends Component {
             const gridSize = this.rows * tileSize + (this.rows - 1) * spacing; // 5*90 + 4*5 = 470px
             
             containerTransform.setContentSize(gridSize, gridSize);
-            console.log('[GameBoard] 设置容器尺寸:', gridSize, 'x', gridSize, '(不依赖Layout)');
         }
         
-        console.log('[GameBoard] 容器设置完成，将直接定位每个瓦片');
+        
     }
 
     private clearGrid(): void {
@@ -214,7 +211,7 @@ export class GameBoard extends Component {
             }
             
             if (success) {
-                console.log('[GameBoard] 成功生成路径:', path);
+        
                 return path;
             }
         }
@@ -266,7 +263,7 @@ export class GameBoard extends Component {
             return;
         }
         
-        console.log('[GameBoard] 开始创建瓦片节点，网格大小:', this.rows, 'x', this.cols, '总瓦片数:', this.rows * this.cols);
+        
         
         // 计算参数
         const tileSize = 90; // LetterTile尺寸
@@ -275,7 +272,7 @@ export class GameBoard extends Component {
         const centerRow = Math.floor(this.rows / 2); // 中心行 = 2
         const centerCol = Math.floor(this.cols / 2); // 中心列 = 2
         
-        console.log('[GameBoard] 布局参数: 瓦片', tileSize, 'px, 间隙', spacing, 'px, 步长', step, 'px, 中心格子(', centerRow, ',', centerCol, ')');
+        
         
         for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
@@ -297,7 +294,6 @@ export class GameBoard extends Component {
                 const offsetY = (centerRow - row) * step; // 行偏移（Y轴向上为正）
                 
                 tileNode.setPosition(offsetX, offsetY, 0);
-                console.log(`[GameBoard] 瓦片(${row},${col}) 位置: (${offsetX}, ${offsetY})`);
                 
                 this.container.addChild(tileNode);
             }
@@ -305,7 +301,7 @@ export class GameBoard extends Component {
         
         this.updateSelectableStates();
         
-        console.log('[GameBoard] 瓦片布局完成，中心格子位于(0,0)');
+        
     }
 
 
@@ -392,10 +388,5 @@ export class GameBoard extends Component {
         this.node.emit('board:change', currentString);
     }
 
-    private printGrid(): void {
-        console.log('[GameBoard] 当前网格:');
-        for (let row = 0; row < this.rows; row++) {
-            console.log(this.gridLetters[row].join(' '));
-        }
-    }
+    private printGrid(): void {}
 }

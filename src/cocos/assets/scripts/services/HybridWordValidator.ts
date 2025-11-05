@@ -32,12 +32,11 @@ export class HybridWordValidator {
     async initialize(): Promise<void> {
         if (this.initialized) return;
 
-        console.log('[HybridWordValidator] 初始化验证器...');
+        
 
         try {
             await this.localDict.load();
             this.initialized = true;
-            console.log('[HybridWordValidator] ✅ 验证器初始化完成');
         } catch (error) {
             console.error('[HybridWordValidator] ❌ 初始化失败:', error);
             throw error;
@@ -69,7 +68,6 @@ export class HybridWordValidator {
         const localResult = this.localDict.get(word);
         if (localResult.valid) {
             const latency = Date.now() - startTime;
-            console.log(`[HybridWordValidator] ✅ 第1层命中: ${word} → ${localResult.definition || '(扩展词库)'} (${latency}ms)`);
             return {
                 valid: true,
                 definition: localResult.definition,
@@ -84,7 +82,6 @@ export class HybridWordValidator {
             const latency = Date.now() - startTime;
 
             if (apiResult) {
-                console.log(`[HybridWordValidator] ✅ 后端验证: ${word} → ${apiResult.valid ? '有效' : '无效'} (${apiResult.source}, ${latency}ms)`);
                 return {
                     valid: apiResult.valid,
                     definition: apiResult.definition,
@@ -92,7 +89,6 @@ export class HybridWordValidator {
                     latency
                 };
             } else {
-                console.log(`[HybridWordValidator] ❌ 后端验证: ${word} → 无效 (${latency}ms)`);
                 return {
                     valid: false,
                     source: 'offline',

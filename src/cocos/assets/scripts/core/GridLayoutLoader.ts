@@ -43,7 +43,6 @@ export class GridLayoutLoader {
 
                 try {
                     const config = jsonAsset.json as LayoutConfig;
-                    console.log(`[GridLayoutLoader] 成功加载配置: ${config.layoutName}`);
                     resolve(config);
                 } catch (parseErr) {
                     console.error(`[GridLayoutLoader] JSON解析错误:`, parseErr);
@@ -331,10 +330,6 @@ export class GridLayoutLoader {
      * @param config 布局配置
      */
     public static debugPrintLayout(config: LayoutConfig): void {
-        console.log('[GridLayoutLoader] 布局信息:');
-        console.log(`  名称: ${config.layoutName}`);
-        console.log(`  网格大小: ${config.gridSize.rows}×${config.gridSize.cols}`);
-        console.log(`  卡片总数: ${config.cards.length}`);
 
         // 统计各层级卡片数
         const layerStats = new Map<number, number>();
@@ -342,9 +337,8 @@ export class GridLayoutLoader {
             layerStats.set(card.layer, (layerStats.get(card.layer) || 0) + 1);
         }
 
-        console.log('  层级分布:');
         layerStats.forEach((count, layer) => {
-            console.log(`    Layer ${layer}: ${count} 张卡片`);
+            // no-op: disabled verbose logging in production
         });
     }
 }

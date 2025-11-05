@@ -45,22 +45,16 @@ export class SlotQueue extends Component {
         await this.loadSlotBackground();
 
         // ✅ 新增：验证按钮节点是否存在
-        console.log('[SlotQueue] 初始化按钮事件...');
-        console.log('[SlotQueue] confirmButton:', this.confirmButton ? '存在' : '❌ 未绑定');
-        console.log('[SlotQueue] continueButton:', this.continueButton ? '存在' : '❌ 未绑定');
-        console.log('[SlotQueue] blinkGroup:', this.blinkGroup ? '存在' : '❌ 未绑定');
 
         // 初始化按钮事件
         if (this.confirmButton) {
             this.confirmButton.on(Node.EventType.TOUCH_END, this.onConfirmClick, this);
-            console.log('[SlotQueue] ✅ confirmButton事件已注册');
         } else {
             console.error('[SlotQueue] ❌ confirmButton未设置，无法注册事件！');
         }
 
         if (this.continueButton) {
             this.continueButton.on(Node.EventType.TOUCH_END, this.onContinueClick, this);
-            console.log('[SlotQueue] ✅ continueButton事件已注册');
         } else {
             console.error('[SlotQueue] ❌ continueButton未设置，无法注册事件！');
         }
@@ -77,7 +71,6 @@ export class SlotQueue extends Component {
     public async init(): Promise<void> {
         // 确保背景图已加载完成
         if (!this.slotBackgroundFrame) {
-            console.log('[SlotQueue] 背景图尚未加载，等待加载完成...');
             await this.loadSlotBackground();
         }
 
@@ -111,7 +104,7 @@ export class SlotQueue extends Component {
         // 应用纯数学定位（移除Layout组件的spacing影响）
         this.layoutSlotsWithPureMath();
 
-        console.log(`[SlotQueue] 预渲染了 ${this.slotNodes.length} 个牌槽节点（使用纯数学定位）`);
+        
     }
 
     /**
@@ -154,7 +147,7 @@ export class SlotQueue extends Component {
         const totalWidth = slotWidth * capacity;
         const startX = -totalWidth / 2 + slotWidth / 2;
 
-        console.log(`[SlotQueue] 布局参数：容量=${capacity}, 缩放=${scale}, slot宽度=${slotWidth.toFixed(2)}px`);
+        
 
         for (let i = 0; i < this.slotNodes.length; i++) {
             const slotNode = this.slotNodes[i];
@@ -167,7 +160,7 @@ export class SlotQueue extends Component {
             // ✅ 设置slot节点的缩放
             slotNode.setScale(scale, scale, 1);
 
-            console.log(`[SlotQueue] slot[${i}] 位置: (${x.toFixed(2)}, 0), 缩放: ${scale}`);
+            
         }
     }
 
@@ -185,8 +178,7 @@ export class SlotQueue extends Component {
                 if (this.slotBackgroundFrame) {
                     // 强制设置SpriteFrame，覆盖预制体默认值
                     sprite.spriteFrame = this.slotBackgroundFrame;
-                    console.log('[SlotQueue] ✅ 成功设置slot背景图到Background节点');
-                    console.log(`[SlotQueue] Background Sprite状态: enabled=${sprite.enabled}, spriteFrame=${sprite.spriteFrame?.name}`);
+                    
                 } else {
                     console.warn('[SlotQueue] ⚠️ slotBackgroundFrame为null，无法设置背景图');
                 }
@@ -240,7 +232,7 @@ export class SlotQueue extends Component {
                     tile.setState('highlight');
                 }
 
-                console.log(`[SlotQueue] 字母牌已移动到slot[${slotIndex}]，将继承slot的缩放比例`);
+                
             } else {
                 console.warn(`[SlotQueue] slot[${slotIndex}]不存在或无效`);
                 // 降级方案：隐藏飞过来的节点，使用updateUI显示
@@ -260,18 +252,16 @@ export class SlotQueue extends Component {
      * 触发闪烁效果
      */
     public startBlink(match: WordMatch): void {
-        console.log('[SlotQueue] ========== startBlink调用 ==========');
-        console.log('[SlotQueue] match:', match);
+        
 
         this.blinking = true;
         this.blinkTimer = this.BLINK_DURATION;
 
-        console.log('[SlotQueue] blinking设置为true，倒计时:', this.BLINK_DURATION);
+        
 
         // 显示按钮组
         if (this.blinkGroup) {
             this.blinkGroup.active = true;
-            console.log('[SlotQueue] ✅ blinkGroup已显示');
         } else {
             console.error('[SlotQueue] ❌ blinkGroup未设置！');
         }
@@ -287,7 +277,7 @@ export class SlotQueue extends Component {
      * 停止闪烁
      */
     public stopBlink(): void {
-        console.log('[SlotQueue] stopBlink调用');
+        
 
         this.blinking = false;
         this.blinkTimer = 0;
@@ -323,7 +313,7 @@ export class SlotQueue extends Component {
      * 高亮匹配的字母
      */
     private highlightMatchedLetters(match: WordMatch): void {
-        console.log(`[SlotQueue] highlightMatchedLetters, match:`, match);
+        
 
         for (let i = 0; i < this.slotNodes.length; i++) {
             const slotNode = this.slotNodes[i];
@@ -346,7 +336,7 @@ export class SlotQueue extends Component {
                 // ✅ 修复：闪烁动画作用于字母牌节点
                 this.playBlinkAnimation(letterTileNode, match.word);
 
-                console.log(`[SlotQueue] slot[${i}]闪烁动画已启动`);
+                
             } else {
                 // 未匹配的字母：保持高亮
                 tile.setState('highlight');
@@ -399,7 +389,6 @@ export class SlotQueue extends Component {
             .to(0.15, { scale: new Vec3(1.15, 1.15, 1) })
             .to(0.15, { scale: new Vec3(1, 1, 1) })
             .call(() => {
-                console.log(`[SlotQueue] 闪烁动画完成（5次循环）: ${word}`);
             })
             .start();
     }
@@ -408,22 +397,20 @@ export class SlotQueue extends Component {
      * 消除单词
      */
     public removeWord(match: WordMatch): void {
-        console.log('[SlotQueue] ========== removeWord调用 ==========');
-        console.log('[SlotQueue] match:', match);
+        
 
         // ✅ 修复：在动画播放前先停止闪烁
         this.stopBlink();
 
         // 播放消除动画
         this.playRemoveAnimation(match).then(() => {
-            console.log('[SlotQueue] 消除动画完成，移除字母');
+            
 
             // 从管理器中移除
             this.slotManager.removeWord(match);
 
             // ✅ 修复：updateUI前打印状态
             const remainingLetters = this.slotManager.getLetters();
-            console.log('[SlotQueue] 剩余字母:', remainingLetters);
 
             // 更新UI
             this.updateUI();
@@ -440,7 +427,7 @@ export class SlotQueue extends Component {
      * 播放消除动画
      */
     private async playRemoveAnimation(match: WordMatch): Promise<void> {
-        console.log(`[SlotQueue] 播放消除动画: ${match.word}, 索引${match.startIdx}-${match.endIdx}`);
+        
 
         const promises: Promise<void>[] = [];
 
@@ -455,14 +442,13 @@ export class SlotQueue extends Component {
                 continue;
             }
 
-            console.log(`[SlotQueue] 消除动画：slot[${i}]`);
+            
 
             const promise = new Promise<void>((resolve) => {
                 tween(letterTileNode)
                     .to(0.2, { scale: new Vec3(1.3, 1.3, 1) })  // 放大
                     .to(0.3, { scale: new Vec3(0, 0, 1) })      // 缩小至消失
                     .call(() => {
-                        console.log(`[SlotQueue] slot[${i}]消除完成`);
 
                         // ✅ 销毁字母牌节点
                         if (letterTileNode.isValid) {
@@ -478,7 +464,7 @@ export class SlotQueue extends Component {
         }
 
         await Promise.all(promises);
-        console.log('[SlotQueue] 所有消除动画完成');
+        
     }
 
     /**
@@ -493,7 +479,7 @@ export class SlotQueue extends Component {
             const oldScale = this.getSlotScale(oldCapacity);
             const newScale = this.getSlotScale(newCapacity);
 
-            console.log(`[SlotQueue] 需要扩容：从 ${oldCapacity}格(${oldScale}) -> ${newCapacity}格(${newScale})`);
+            
 
             // 添加新slot节点
             for (let i = this.slotNodes.length; i < newCapacity; i++) {
@@ -507,7 +493,7 @@ export class SlotQueue extends Component {
             // 播放扩容动画（闪烁缩小效果）
             this.playExpandAnimation(oldScale, newScale);
 
-            console.log(`[SlotQueue] 扩容完成，现有 ${this.slotNodes.length} 个slot节点`);
+            
         }
     }
 
@@ -520,7 +506,7 @@ export class SlotQueue extends Component {
     private playExpandAnimation(oldScale: number, newScale: number): void {
         if (!this.slotItemsContainer) return;
 
-        console.log(`[SlotQueue] 播放扩容动画：${oldScale} → ${newScale}`);
+        
 
         // 1. 将所有slot节点的localScale临时重置为1.0（避免双重缩放）
         for (const slotNode of this.slotNodes) {
@@ -555,7 +541,7 @@ export class SlotQueue extends Component {
                     }
                 }
 
-                console.log(`[SlotQueue] 扩容动画完成，固定为缩放比例：${newScale}`);
+                
 
                 // 6. 触发事件，通知其他组件（如StackBoard）
                 this.node.emit('capacity-expanded', newScale);
@@ -602,7 +588,7 @@ export class SlotQueue extends Component {
                     const sprite = backgroundNode.getComponent(Sprite);
                     if (sprite) {
                         sprite.spriteFrame = this.slotBackgroundFrame;
-                        console.log(`[SlotQueue] 🔄 恢复slot[${i}]背景图`);
+                        
                     }
                 } else if (!backgroundNode) {
                     console.warn(`[SlotQueue] ⚠️ slot[${i}]未找到Background节点`);
@@ -617,17 +603,14 @@ export class SlotQueue extends Component {
      * "✓消除"按钮点击
      */
     private onConfirmClick(): void {
-        console.log('[SlotQueue] ========== onConfirmClick触发 ==========');
-        console.log('[SlotQueue] blinking状态:', this.blinking);
-        console.log('[SlotQueue] blinkTimer:', this.blinkTimer);
-        console.log('[SlotQueue] blinkGroup.active:', this.blinkGroup?.active);
+        
 
         if (!this.blinking) {
             console.warn('[SlotQueue] ❌ blinking为false，点击无效');
             return;
         }
 
-        console.log('[SlotQueue] ✅ 停止闪烁并触发confirm-remove事件');
+        
         this.stopBlink();
         this.node.emit('confirm-remove');
     }
@@ -683,7 +666,6 @@ export class SlotQueue extends Component {
 
         // 将slot节点的本地坐标转换为世界坐标
         const worldPos = slotNode.getWorldPosition();
-        console.log(`[SlotQueue] 下一个空闲slot[${nextIndex}]的世界坐标: (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`);
 
         return worldPos;
     }
@@ -693,13 +675,10 @@ export class SlotQueue extends Component {
         if (this.blinking) {
             this.blinkTimer -= dt;
 
-            // ✅ 新增：倒计时日志（每秒打印一次）
-            if (Math.floor(this.blinkTimer * 10) % 10 === 0) {
-                console.log(`[SlotQueue] 倒计时: ${this.blinkTimer.toFixed(1)}秒`);
-            }
+            
 
             if (this.blinkTimer <= 0) {
-                console.log('[SlotQueue] ========== 自动消除倒计时到期 ==========');
+                
 
                 // ❌ 修复前：立即停止闪烁
                 // this.stopBlink();
@@ -718,12 +697,11 @@ export class SlotQueue extends Component {
     private async loadSlotBackground(): Promise<void> {
         // 防止重复加载
         if (this.slotBackgroundFrame) {
-            console.log('[SlotQueue] 背景图已加载，直接使用缓存');
             return;
         }
 
         try {
-            console.log('[SlotQueue] 从预加载缓存获取牌槽背景图...');
+            
 
             const assetLoader = AssetLoader.getInstance();
 
@@ -731,15 +709,11 @@ export class SlotQueue extends Component {
             const isCached = assetLoader.isAssetCached('slot', 'slot_item/spriteFrame');
 
             if (isCached) {
-                console.log('[SlotQueue] ✅ 牌槽背景图已在预加载阶段完全加载');
             } else {
-                console.log('[SlotQueue] ⚠️ 牌槽背景图未预加载，开始动态加载');
             }
 
             // 使用AssetLoader从缓存获取（已完全加载，立即可用）
             this.slotBackgroundFrame = await assetLoader.loadSpriteFrame('slot', 'slot_item/spriteFrame');
-
-            console.log('[SlotQueue] 牌槽背景图获取成功，已缓存供所有slot使用');
 
         } catch (error) {
             console.error('[SlotQueue] 加载牌槽背景图失败:', error);

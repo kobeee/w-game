@@ -96,7 +96,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
         this.lastRescueAt = 0;
         this.occupancyBeforeClear = 0;
 
-        console.log(`[SlotQueue] 初始化：容量 ${this.capacity}/${this.maxCapacity}`);
+        
     }
 
     /**
@@ -113,7 +113,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
 
         this.letters.push(letter.toUpperCase());
 
-        console.log(`[SlotQueue] 添加字母 ${letter}，当前: [${this.letters.join(', ')}] (${this.letters.length}/${this.capacity})`);
+        
 
         // 触发事件
         this.emit(SlotQueueEvent.LETTER_ADDED, letter);
@@ -136,7 +136,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
 
         this.wordsCleared++;
 
-        console.log(`[SlotQueue] 消除单词 ${match.word}，剩余: [${this.letters.join(', ')}] (${this.letters.length}/${this.capacity})`);
+        
 
         // 触发事件
         this.emit(SlotQueueEvent.WORD_REMOVED, match.word);
@@ -167,7 +167,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
         if (this.occupancyBeforeClear >= this.expandRule.rescue.trigger && cooldownPassed) {
             this.expand(this.expandRule.rescue.reward, '救济扩容');
             this.lastRescueAt = this.wordsCleared;
-            console.log(`[SlotQueue] 触发救济扩容，占用率: ${(this.occupancyBeforeClear * 100).toFixed(1)}%`);
+            
         }
     }
 
@@ -182,8 +182,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
         this.capacity = Math.min(this.capacity + amount, this.maxCapacity);
 
         if (this.capacity > oldCapacity) {
-            console.log(`[SlotQueue] 扩容: ${oldCapacity} → ${this.capacity} (${reason})`);
-
+            
             // 触发事件
             this.emit(SlotQueueEvent.CAPACITY_EXPANDED, {
                 oldCapacity,
@@ -235,7 +234,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
         this.blinking = true;
         this.matchedWord = match;
 
-        console.log(`[SlotQueue] 开始闪烁: ${match.word}`);
+        
 
         this.emit(SlotQueueEvent.BLINK_START, match);
     }
@@ -251,7 +250,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
         this.blinking = false;
         this.matchedWord = undefined;
 
-        console.log(`[SlotQueue] 取消闪烁`);
+        
 
         this.emit(SlotQueueEvent.BLINK_CANCEL);
     }
@@ -320,7 +319,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
         this.lastRescueAt = 0;
         this.occupancyBeforeClear = 0;
 
-        console.log(`[SlotQueue] 清空牌槽`);
+        
     }
 
     /**

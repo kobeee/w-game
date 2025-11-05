@@ -31,7 +31,6 @@ export class HUD extends Component {
      */
     bindGlossSheet(sheet: GlossSheet): void {
         this.boundGlossSheet = sheet;
-        console.log('[HUD] 已绑定词义卡组件');
     }
 
     /**
@@ -212,6 +211,5 @@ export class HUD extends Component {
 
     protected onDestroy(): void {
         // HUD销毁清理
-        console.log('[HUD] 组件销毁');
     }
 }

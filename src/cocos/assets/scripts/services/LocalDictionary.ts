@@ -23,11 +23,8 @@ export class LocalDictionary {
      */
     async load(): Promise<void> {
         if (this.isLoaded) {
-            console.log('[LocalDictionary] 词库已加载，跳过重复加载');
             return;
         }
-
-        console.log('[LocalDictionary] 开始加载本地词库...');
 
         try {
             // 加载核心词库（500词+释义）
@@ -37,9 +34,6 @@ export class LocalDictionary {
             await this.loadExtendedDict();
 
             this.isLoaded = true;
-            console.log(`[LocalDictionary] ✅ 本地词库加载完成`);
-            console.log(`[LocalDictionary]    核心词库: ${this.coreDict.size} 条`);
-            console.log(`[LocalDictionary]    扩展词库: ${this.extendedDict.size} 个`);
         } catch (error) {
             console.error('[LocalDictionary] ❌ 词库加载失败:', error);
             throw error;

@@ -57,8 +57,7 @@ export class GlossSheet extends Component {
         if (autoMs > 0) {
             this.scheduleAutoHide(autoMs);
         }
-
-        console.log(`[GlossSheet] 显示词义: ${this.currentWord} - ${this.currentZh}`);
+        
     }
 
     /**
@@ -101,7 +100,6 @@ export class GlossSheet extends Component {
             // 加载modal Bundle中的弹窗背景 - 必须指定到spriteFrame子资源
             if (this.panel) {
                 await this.loadRemoteBundle('modal', 'pop_card/spriteFrame', this.panel.getComponent(Sprite));
-                console.log('[GlossSheet] 弹窗背景加载成功');
             }
         } catch (error) {
             console.warn('[GlossSheet] 弹窗背景加载失败', error);
@@ -116,7 +114,6 @@ export class GlossSheet extends Component {
                     const sprite = this.starButton.getComponent(Sprite);
                     if (sprite) {
                         sprite.spriteFrame = starIcon;
-                        console.log('[GlossSheet] 加载成功: badges/reward_star');
                     }
                 }
             } catch (error) {
@@ -147,7 +144,7 @@ export class GlossSheet extends Component {
                     if (sprite) {
                         sprite.spriteFrame = spriteFrame;
                         sprite.type = Sprite.Type.SLICED; // 弹窗背景使用9-slice
-                        console.log(`[GlossSheet] 成功设置SpriteFrame: ${bundleName}/${assetPath}`);
+                        
                     }
                     resolve();
                 });
@@ -163,16 +160,14 @@ export class GlossSheet extends Component {
             // 这部分保持原有的逐级加载逻辑，用于本地小资源
             // 先尝试直接加载SpriteFrame
             resources.load(path, SpriteFrame, (err, spriteFrame) => {
-                if (!err && spriteFrame) {
-                    console.log(`[GlossSheet] 直接加载成功: ${path}`);
+                    if (!err && spriteFrame) {
                     resolve(spriteFrame);
                     return;
                 }
                 
                 // 如果失败，尝试加载图片文件并获取spriteFrame子资源
                 resources.load(path + '/spriteFrame', SpriteFrame, (err2, spriteFrame2) => {
-                    if (!err2 && spriteFrame2) {
-                        console.log(`[GlossSheet] 子资源加载成功: ${path}/spriteFrame`);
+                        if (!err2 && spriteFrame2) {
                         resolve(spriteFrame2);
                         return;
                     }
@@ -182,7 +177,6 @@ export class GlossSheet extends Component {
                         if (!err3 && texture) {
                             const spriteFrame3 = new SpriteFrame();
                             spriteFrame3.texture = texture;
-                            console.log(`[GlossSheet] 通过Texture2D创建成功: ${path}`);
                             resolve(spriteFrame3);
                         } else {
                             console.warn(`[GlossSheet] 所有方式都失败: ${path}`, err, err2, err3);
@@ -265,13 +259,10 @@ export class GlossSheet extends Component {
         const transform = this.panel.getComponent(UITransform);
         const targetY = transform ? transform.height * 0.5 : 150; // 显示在屏幕底部上方
 
-        console.log(`[GlossSheet] 滑入目标位置: Y=${targetY}`);
-
         // 200ms滑入动画
         tween(this.panel)
             .to(0.2, { position: new Vec3(0, targetY, 0) }, { easing: 'quartOut' })
             .call(() => {
-                console.log('[GlossSheet] 滑入动画完成');
             })
             .start();
     }
@@ -287,7 +278,6 @@ export class GlossSheet extends Component {
             .to(0.12, { position: new Vec3(0, targetY, 0) }, { easing: 'quartIn' })
             .call(() => {
                 this.hideImmediate();
-                console.log('[GlossSheet] 滑出动画完成');
             })
             .start();
     }
@@ -308,7 +298,6 @@ export class GlossSheet extends Component {
     }
 
     private onStarClicked(): void {
-        console.log('[GlossSheet] 收藏按钮被点击:', this.currentWord);
         
         if (this.starCallback) {
             this.starCallback(this.currentWord);
@@ -319,13 +308,11 @@ export class GlossSheet extends Component {
     }
 
     private onCloseClicked(): void {
-        console.log('[GlossSheet] 关闭按钮被点击');
         this.hide();
     }
 
     private onPanelTouched(event: EventTouch): void {
         // 当用户触摸面板时，延长显示时间到2.5秒
-        console.log('[GlossSheet] 面板被触摸，延长显示时间');
         this.scheduleAutoHide(2500);
     }
 

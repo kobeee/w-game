@@ -321,6 +321,7 @@ export class NetworkService {
         definition?: string;
         source: 'cache' | 'gemini';
     } | null> {
+            const t0 = Date.now();
             try {
                 const response = await NetworkService.post<{
                 request_id?: string;
@@ -337,20 +338,26 @@ export class NetworkService {
                 { word: word.toUpperCase() },
                 2000
             );
-            if (response && response.valid) {
+            const duration = Date.now() - t0;
+            const resolvedSource = (response?.source === 'cache' || response?.source === 'redis' ? 'cache' : 'gemini') as 'cache' | 'gemini';
+            const isValid = !!(response && response.valid);
+            console.log(`[NetworkService] 验证 ${word.toUpperCase()} → valid=${isValid} source=${resolvedSource}${response?.request_id ? ' id=' + response.request_id : ''} 耗时=${duration}ms`);
+
+            if (isValid) {
                 return {
                     valid: true,
                     definition: response.definition,
-                    source: (response.source === 'cache' || response.source === 'redis' ? 'cache' : 'gemini') as 'cache' | 'gemini'
+                    source: resolvedSource
                 };
             } else {
                 return {
                     valid: false,
-                    source: (response?.source === 'cache' || response?.source === 'redis' ? 'cache' : 'gemini') as 'cache' | 'gemini'
+                    source: resolvedSource
                 };
             }
         } catch (error) {
-            console.error(`[NetworkService] ❌ 单词验证错误: ${word}`);
+            const duration = Date.now() - t0;
+            console.error(`[NetworkService] ❌ 单词验证错误: ${word} (耗时=${duration}ms)`, error);
             return null;
         }
     }
