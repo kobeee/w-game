@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## **省钱**需知
+**为了节省token，以及不让上下文过于长，不要太啰嗦，不要动不动就搞一堆的总结文档**
+**除非调试需要，否则请不要添加无效日志打印，并且，在调试功能通过后，主动清楚无效日志打印**
+**读取代码自动跳过注释**
+**docs/archive目录是CHANGELOG等其他文件的归档目录，非必要不读取，除非有明确引用目录里的指定文件**
+
 ## 绝对遵守
 1. 不要动不动就完美，谦虚一点
 2. 不要动不动就整一堆的md文件
