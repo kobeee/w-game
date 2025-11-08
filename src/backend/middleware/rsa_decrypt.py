@@ -65,7 +65,9 @@ try:
         port=REDIS_PORT,
         db=REDIS_DB,
         decode_responses=True,
-        socket_connect_timeout=5,
+        socket_connect_timeout=2,
+        socket_timeout=0.5,
+        retry_on_timeout=True,
         socket_keepalive=True
     )
     redis_client.ping()
@@ -181,13 +183,11 @@ def check_nonce(nonce: str) -> bool:
         # 构造 nonce 键
         nonce_key = f"{NONCE_KEY_PREFIX}{nonce}"
 
-        # 检查 nonce 是否已存在
-        if redis_client.exists(nonce_key):
+        # 原子写入：SET NX EX，避免 EXISTS+SETEX 两次往返与竞态
+        ok = redis_client.set(nonce_key, "1", ex=NONCE_EXPIRY_SECONDS, nx=True)
+        if not ok:
             logger.warning(f"[RSA] ⚠️ Nonce 已使用过（重放攻击）: {nonce}")
             return False
-
-        # 记录 nonce（设置过期时间）
-        redis_client.setex(nonce_key, NONCE_EXPIRY_SECONDS, "1")
         logger.info(f"[RSA] ✅ Nonce 验证通过并已记录")
         return True
 

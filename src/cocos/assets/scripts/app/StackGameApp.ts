@@ -354,14 +354,56 @@ export class StackGameApp extends Component {
             const currentLetters = this.slotQueue.getLetters();
             const currentWord = currentLetters.join('');
 
-            // ✅ 关键修复：只有当单词长度 >= 3 时才验证
+            // ✅ 网络验证后缀（MABAN → 验证 MABAN/ABAN/BAN）
             if (currentWord.length >= 3) {
-                this.validationManager.validateConcurrent(currentWord).then((result) => {
-                }).catch((error) => {
-                    console.warn(`[StackGameApp] 验证失败: ${currentWord}`, error);
-                });
-            } else {
-                
+                this.validateSuffixes(currentLetters);
+            }
+        });
+    }
+
+    /**
+     * 并发验证所有后缀（MABAN → 并发验证 MABAN/ABAN/BAN），取最长匹配
+     */
+    private validateSuffixes(letters: string[]): void {
+        const totalLen = letters.length;
+        const suffixPromises: Array<Promise<{ suffix: string; startIdx: number; valid: boolean }>> = [];
+
+        // 生成所有后缀并发验证
+        for (let leftCut = 0; leftCut <= totalLen - 3; leftCut++) {
+            const suffix = letters.slice(leftCut).join('');
+            if (suffix.length < 3) break;
+
+            const promise = this.validationManager.validateConcurrent(suffix)
+                .then(result => ({
+                    suffix,
+                    startIdx: leftCut,
+                    valid: !!(result && result.valid)
+                }))
+                .catch(() => ({
+                    suffix,
+                    startIdx: leftCut,
+                    valid: false
+                }));
+
+            suffixPromises.push(promise);
+        }
+
+        // 等待所有验证完成，取最长的valid=true后缀
+        Promise.all(suffixPromises).then(results => {
+            // 从长到短找第一个valid=true
+            const validMatch = results.find(r => r.valid);
+
+            if (validMatch && this.gameState === GameState.PLAYING) {
+                const networkMatch = {
+                    word: validMatch.suffix,
+                    startIdx: validMatch.startIdx,
+                    endIdx: totalLen - 1,
+                    length: validMatch.suffix.length
+                };
+
+                this.currentMatch = networkMatch;
+                this.gameState = GameState.BLINKING;
+                this.slotQueue.startBlink(networkMatch);
             }
         });
     }

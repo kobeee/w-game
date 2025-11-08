@@ -12,12 +12,15 @@
 """
 
 from fastapi import FastAPI, Request
+from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import os
 import logging
 import httpx
+import asyncio
+from collections import OrderedDict
 import json
 import redis
 from typing import Optional
@@ -59,13 +62,21 @@ REDIS_DB = int(os.getenv("REDIS_DB", 0))
 WORD_CACHE_PREFIX = "word:"
 WORD_CACHE_TTL = 86400 * 365  # 1年过期
 
+# ===== WS 配置 =====
+EDGE_SHARED_TOKEN = os.getenv("EDGE_SHARED_TOKEN", "")
+WS_HEARTBEAT_SEC = int(os.getenv("WS_HEARTBEAT_SEC", "20"))
+WS_ROTATE_SEC = int(os.getenv("WS_ROTATE_SEC", "90"))
+WS_IDLE_SEC = int(os.getenv("WS_IDLE_SEC", "45"))
+
 try:
     redis_client = redis.Redis(
         host=REDIS_HOST,
         port=REDIS_PORT,
         db=REDIS_DB,
         decode_responses=True,
-        socket_connect_timeout=5,
+        socket_connect_timeout=2,
+        socket_timeout=0.5,
+        retry_on_timeout=True,
         socket_keepalive=True,
         health_check_interval=30
     )
@@ -91,6 +102,41 @@ app.middleware("http")(cloudflare_verification_middleware)
 
 # 2. RSA 解密中间件（从 X-Encrypted-Payload 头提取密文）
 app.middleware("http")(rsa_decryption_middleware)
+
+
+# ===== 本地 LRU 缓存（进程内）与单飞去重 =====
+MAX_LOCAL_CACHE_SIZE = int(os.getenv("LOCAL_CACHE_SIZE", "8000"))
+_local_cache: "OrderedDict[str, dict]" = OrderedDict()
+
+def _cache_get(word: str) -> Optional[dict]:
+    key = word.upper()
+    if key in _local_cache:
+        _local_cache.move_to_end(key)
+        return _local_cache[key]
+    return None
+
+def _cache_set(word: str, result: dict) -> None:
+    key = word.upper()
+    _local_cache[key] = result
+    _local_cache.move_to_end(key)
+    if len(_local_cache) > MAX_LOCAL_CACHE_SIZE:
+        _local_cache.popitem(last=False)
+
+# 单飞：同一单词的并发请求仅触发一次下游调用
+_inflight: dict[str, asyncio.Future] = {}
+
+async def _singleflight(word: str, coro_factory):
+    key = word.upper()
+    fut = _inflight.get(key)
+    if fut is not None:
+        return await fut
+    loop = asyncio.get_running_loop()
+    fut = loop.create_task(coro_factory())
+    _inflight[key] = fut
+    try:
+        return await fut
+    finally:
+        _inflight.pop(key, None)
 
 
 # ===== 数据模型 =====
@@ -123,6 +169,12 @@ def get_word_from_cache(word: str) -> Optional[dict]:
     Returns:
         缓存结果或 None
     """
+    # 先查进程内 LRU
+    local_hit = _cache_get(word)
+    if local_hit is not None:
+        logger.info(f"[Cache] ✅ Local 缓存命中: {word}")
+        return local_hit
+
     if not redis_client:
         return None
 
@@ -131,7 +183,9 @@ def get_word_from_cache(word: str) -> Optional[dict]:
         cached = redis_client.get(cache_key)
         if cached:
             logger.info(f"[Cache] ✅ Redis 缓存命中: {word}")
-            return json.loads(cached)
+            data = json.loads(cached)
+            _cache_set(word, data)
+            return data
     except Exception as e:
         logger.warning(f"[Cache] ⚠️ Redis 读取失败: {e}")
 
@@ -146,6 +200,8 @@ def save_word_to_cache(word: str, result: dict) -> None:
         word: 单词（大写）
         result: 验证结果字典
     """
+    # 先写入本地 LRU
+    _cache_set(word, result)
     if not redis_client:
         return
 
@@ -161,6 +217,10 @@ def save_word_to_cache(word: str, result: dict) -> None:
         logger.warning(f"[Cache] ⚠️ Redis 写入失败: {e}")
 
 
+# ===== Gemini HTTP 客户端（HTTP/2 连接池） =====
+_http_client: Optional[httpx.AsyncClient] = None
+
+
 # ===== Gemini API 调用 =====
 async def call_gemini_api(word: str) -> dict:
     """
@@ -172,48 +232,68 @@ async def call_gemini_api(word: str) -> dict:
     Returns:
         验证结果 {"valid": bool, "definition": str}
     """
-    prompt = f'''判断"{word}"是否是有效的英语单词（包括俚语、专有名词）。
-如果是，用20字以内的中文解释其含义。
-仅返回JSON格式: {{"valid": true/false, "definition": "释义"}}'''
+    prompt = (
+        f"判断\"{word}\"是否是有效的英语单词（包括俚语、专有名词）。\n"
+        f"如果是，用20字以内的中文解释其含义。\n"
+        f"仅返回JSON: {{\"valid\": true/false, \"definition\": \"释义\"}}"
+    )
 
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.post(
-                GEMINI_ENDPOINT,
-                headers={
-                    "x-goog-api-key": GEMINI_API_KEY,
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "contents": [{
-                        "parts": [{"text": prompt}]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "maxOutputTokens": 100,
-                        "candidateCount": 1
-                    }
+        assert _http_client is not None, "HTTP client not initialized"
+        response = await _http_client.post(
+            GEMINI_ENDPOINT,
+            headers={
+                "x-goog-api-key": GEMINI_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "contents": [{
+                    "parts": [{"text": prompt}]
+                }],
+                "generationConfig": {
+                    "temperature": 0.0,
+                    "maxOutputTokens": 32,
+                    "candidateCount": 1,
+                    # 强制结构化 JSON，避免 markdown 包裹
+                    "responseMimeType": "application/json"
                 }
-            )
-
-            response.raise_for_status()
-            result = response.json()
-
-            # 解析 Gemini 返回
-            text = result["candidates"][0]["content"]["parts"][0]["text"]
-
-            # 提取 JSON（可能包含 markdown 代码块）
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
-
-            parsed = json.loads(text.strip())
-
-            return {
-                "valid": parsed.get("valid", False),
-                "definition": parsed.get("definition", ""),
             }
+        )
+
+        response.raise_for_status()
+        result = response.json()
+
+        # 结构化输出：优先直接 JSON，其次容错提取
+        text = result["candidates"][0]["content"]["parts"][0]["text"]
+        text = (text or "").strip()
+
+        def _try_parse(s: str):
+            try:
+                return json.loads(s)
+            except Exception:
+                return None
+
+        parsed = _try_parse(text)
+        if parsed is None:
+            # 去除代码块围栏
+            if text.startswith("```json") and text.endswith("```"):
+                parsed = _try_parse(text[7:-3].strip())
+            if parsed is None and "```" in text:
+                inner = text.split("```")[1] if len(text.split("```")) > 1 else text
+                parsed = _try_parse(inner.strip())
+        if parsed is None:
+            # 从第一个 { 到最后一个 } 截取
+            l = text.find('{')
+            r = text.rfind('}')
+            if l != -1 and r != -1 and r > l:
+                parsed = _try_parse(text[l:r+1])
+        if parsed is None:
+            raise json.JSONDecodeError("Failed to parse Gemini JSON", text, 0)
+
+        return {
+            "valid": parsed.get("valid", False),
+            "definition": parsed.get("definition", ""),
+        }
 
     except httpx.TimeoutException:
         logger.error(f"[Gemini] ⚠️ 请求超时: {word}")
@@ -309,10 +389,11 @@ async def verify_word(request: VerifyRequest):
 
     # ===== 调用 Gemini API =====
     logger.info(f"[{request_id}] 调用 Gemini: {word}")
-    result = await call_gemini_api(word)
+    # 单飞去重，减少并发相同单词的重复调用
+    result = await _singleflight(word, lambda: call_gemini_api(word))
 
-    # 验证通过后写入缓存
-    if result.get("valid"):
+    # 写入缓存（成功返回即缓存，无错误字段时）
+    if "error" not in result:
         save_word_to_cache(word, result)
 
     latency_ms = int((time.time() - start_time) * 1000)
@@ -389,6 +470,186 @@ async def health_check():
     }
 
 
+# ===== WebSocket: /ws/word =====
+@app.websocket("/ws/word")
+async def ws_word(websocket: WebSocket):
+    """最小可用 WebSocket 通道：hello/ping/validate。
+
+    安全：若配置 EDGE_SHARED_TOKEN，则要求握手头 X-Edge-Token 一致。
+    心跳：收到 ping 回复 pong；后台基于空闲超时/旋转时间控制关闭。
+    验证：复用现有缓存/SingleFlight/Gemini 逻辑，并返回 latencyMs 与 source。
+    """
+    # 简单鉴权：仅当设置 EDGE_SHARED_TOKEN 时校验
+    edge_token = websocket.headers.get("x-edge-token") or websocket.headers.get("X-Edge-Token")
+    if EDGE_SHARED_TOKEN and edge_token != EDGE_SHARED_TOKEN:
+        await websocket.close(code=4403)
+        return
+
+    await websocket.accept()
+
+    connected_at = time.time()
+    last_active = time.time()
+    session_id = generate_request_id()
+
+    logger.info(f"[WS] connect session={session_id} ua={websocket.headers.get('user-agent','-')}")
+
+    async def send_json(msg: dict):
+        try:
+            await websocket.send_text(json.dumps(msg, ensure_ascii=False))
+        except Exception:
+            raise
+
+    # 发送 hello-ack
+    try:
+        await send_json({
+            "type": "hello-ack",
+            "sessionId": session_id,
+            "heartbeatSec": WS_HEARTBEAT_SEC,
+            "rotateSec": WS_ROTATE_SEC,
+            "rateLimit": {"maxConnPerIp": int(os.getenv("WS_MAX_CONN_PER_IP", "5"))},
+        })
+    except Exception:
+        await websocket.close(code=1011)
+        return
+
+    async def should_close() -> bool:
+        now = time.time()
+        if WS_IDLE_SEC > 0 and now - last_active > WS_IDLE_SEC:
+            return True
+        if WS_ROTATE_SEC > 0 and now - connected_at > WS_ROTATE_SEC:
+            return True
+        return False
+
+    # 仅保留最后一次验证：维护一个当前任务
+    current_task: Optional[asyncio.Task] = None
+
+    while True:
+        # 检查是否需要因空闲/旋转关闭
+        if await asyncio.to_thread(should_close):
+            # 先发 notice.rotate 或 closing
+            try:
+                if time.time() - connected_at > WS_ROTATE_SEC:
+                    await send_json({"type": "notice", "noticeType": "rotate", "detail": "server_rotate"})
+                else:
+                    await send_json({"type": "notice", "noticeType": "closing", "detail": "idle_timeout"})
+            finally:
+                await websocket.close(code=4000)
+                logger.info(f"[WS] close session={session_id} code=4000 reason=rotate_or_idle")
+                return
+
+        try:
+            # 等待消息，设置一个较短的超时以便周期性检查 idle/rotate
+            msg_text = await asyncio.wait_for(websocket.receive_text(), timeout=WS_HEARTBEAT_SEC)
+            last_active = time.time()
+        except asyncio.TimeoutError:
+            # 超时仅用于触发上面的 idle/rotate 检查，同时回一个 pong 作为心跳
+            try:
+                await send_json({"type": "pong"})
+                continue
+            except Exception:
+                await websocket.close(code=1011)
+                return
+        except WebSocketDisconnect:
+            return
+        except Exception:
+            await websocket.close(code=1011)
+            return
+
+        # 解析消息
+        try:
+            msg = json.loads(msg_text)
+        except Exception:
+            await send_json({"type": "notice", "event": "error", "code": 400, "message": "INVALID_JSON"})
+            continue
+
+        mtype = msg.get("type")
+        if mtype == "ping":
+            await send_json({"type": "pong"})
+            continue
+        if mtype == "hello":
+            await send_json({
+                "type": "hello-ack",
+                "sessionId": session_id,
+                "heartbeatSec": WS_HEARTBEAT_SEC,
+                "rotateSec": WS_ROTATE_SEC,
+                "rateLimit": {"maxConnPerIp": int(os.getenv("WS_MAX_CONN_PER_IP", "5"))},
+            })
+            continue
+        if mtype != "validate":
+            await send_json({"type": "notice", "noticeType": "error", "code": 422, "detail": "UNSUPPORTED_TYPE"})
+            continue
+
+        # validate
+        rid = msg.get("rid") or generate_request_id()
+        word = (msg.get("word") or "").strip().upper()
+
+        # 基础校验
+        if not word or len(word) < 3 or len(word) > 20 or not word.isalpha():
+            await send_json({
+                "type": "validate-res",
+                "rid": rid,
+                "word": word,
+                "valid": False,
+                "source": "validation",
+                "latencyMs": 0,
+                "cache": False,
+                "error_code": 42201,
+                "message": "invalid word",
+            })
+            continue
+
+        # 取消上一个待处理任务，仅保留最后一次
+        if current_task and not current_task.done():
+            current_task.cancel()
+
+        async def process_validate(rid0: str, word0: str):
+            t0 = time.time()
+            try:
+                # 先查缓存
+                cached0 = get_word_from_cache(word0)
+                if cached0 is not None:
+                    latency_ms0 = int((time.time() - t0) * 1000)
+                    logger.info(f"[WS] validate session={session_id} rid={rid0} word={word0} source=cache latencyMs={latency_ms0}")
+                    await send_json({
+                        "type": "validate-res",
+                        "rid": rid0,
+                        "word": word0,
+                        "valid": bool(cached0.get("valid")),
+                        "definition": cached0.get("definition"),
+                        "source": "cache",
+                        "latencyMs": latency_ms0,
+                        "cache": True,
+                        "checked_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    })
+                    return
+
+                logger.info(f"[WS] call_gemini session={session_id} rid={rid0} word={word0}")
+                result0 = await _singleflight(word0, lambda: call_gemini_api(word0))
+                if "error" not in result0:
+                    save_word_to_cache(word0, result0)
+
+                latency_ms0 = int((time.time() - t0) * 1000)
+                logger.info(f"[WS] validate session={session_id} rid={rid0} word={word0} source={'gemini' if 'error' not in result0 else 'fallback'} latencyMs={latency_ms0}")
+                await send_json({
+                    "type": "validate-res",
+                    "rid": rid0,
+                    "word": word0,
+                    "valid": bool(result0.get("valid")),
+                    "definition": result0.get("definition"),
+                    "source": "gemini" if "error" not in result0 else "fallback",
+                    "latencyMs": latency_ms0,
+                    "cache": False,
+                    "checked_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    "error_code": None if "error" not in result0 else 50001,
+                    "message": None if "error" not in result0 else result0.get("error"),
+                })
+            except asyncio.CancelledError:
+                # 被新请求取代，静默取消
+                return
+
+        current_task = asyncio.create_task(process_validate(rid, word))
+
+
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
@@ -397,6 +658,15 @@ async def startup_event():
     logger.info(f"🔓 CORS 允许来源: {ALLOWED_ORIGINS}")
     if redis_client:
         logger.info(f"💾 Redis 配置: {REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+    # 初始化全局 HTTP 客户端（HTTP/2 + 连接池）
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(
+            http2=True,
+            timeout=httpx.Timeout(connect=1.0, read=2.5, write=1.0, pool=2.5),
+            limits=httpx.Limits(max_connections=64, max_keepalive_connections=16),
+            headers={"Content-Type": "application/json"},
+        )
 
 
 @app.on_event("shutdown")
@@ -405,6 +675,13 @@ async def shutdown_event():
     logger.info("🛑 单词验证服务关闭")
     if redis_client:
         redis_client.close()
+    # 关闭全局 HTTP 客户端
+    global _http_client
+    if _http_client is not None:
+        try:
+            await _http_client.aclose()
+        finally:
+            _http_client = None
 
 
 # ===== 错误处理 =====

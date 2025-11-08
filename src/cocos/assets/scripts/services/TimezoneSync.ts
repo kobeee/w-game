@@ -14,33 +14,8 @@ export class TimezoneSync {
      * 此方法改为使用 /api/public-key 接口获取服务器时间（该接口返回服务器时间和时区信息）。
      */
     static async syncWithServer(): Promise<boolean> {
-        try {
-            // 使用 /api/public-key 接口获取服务器时间（该接口存在且返回服务器时间）
-            const response = await fetch('https://ai.elvis1949.cloudns.pro/w-game-service/api/public-key');
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            const data = await response.json();
-
-            if (data.serverTime && data.timezone === this.TARGET_TIMEZONE) {
-                const serverTime = data.serverTime;
-                // 直接用 Date.now() 获取本地时间戳，不要用自定义的 getLocalTime()
-                const localTime = Date.now();
-                this.serverTimeOffset = serverTime - localTime;
-
-                
-
-                return true;
-            } else {
-                console.warn('[TimezoneSync] ⚠️ 服务器时区不匹配，使用本地时间');
-                return false;
-            }
-        } catch (error) {
-            console.warn('[TimezoneSync] ⚠️ 时间同步失败，使用本地时间:', error);
-            return false;
-        }
+        // 已废弃：不再需要服务器时区同步，直接使用本地时间
+        return true;
     }
     
     /**

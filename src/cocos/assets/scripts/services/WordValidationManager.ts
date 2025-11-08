@@ -30,6 +30,8 @@ export class WordValidationManager {
         result: null
     };
     private isInitialized: boolean = false;
+    private debounceTimer: any = null;
+    private currentAbort: AbortController | null = null;
 
     /**
      * 初始化验证管理器
@@ -57,42 +59,40 @@ export class WordValidationManager {
      */
     async validateConcurrent(word: string): Promise<ValidateResult> {
         const upperWord = word.toUpperCase();
-
         
+        // 取消上一轮未开始/进行中的验证（只保留最新的词）
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+            this.debounceTimer = null;
+        }
 
-        // 更新待验证状态
         this.pendingValidation = {
             word: upperWord,
             state: 'validating',
             result: null
         };
 
-        try {
-            // 执行验证（与飞行动画并发）
-            const result = await this.validator.validate(upperWord);
-
-            // 验证完成，更新状态
-            this.pendingValidation.state = 'completed';
-            this.pendingValidation.result = result;
-
-            
-
-            return result;
-        } catch (error) {
-            console.error(`[WordValidationManager] ❌ 验证失败: ${upperWord}`, error);
-
-            const errorResult: ValidateResult = {
-                valid: false,
-                source: 'offline',
-                latency: 0,
-                error: error instanceof Error ? error.message : 'UNKNOWN_ERROR'
-            };
-
-            this.pendingValidation.state = 'timeout';
-            this.pendingValidation.result = errorResult;
-
-            return errorResult;
-        }
+        return new Promise<ValidateResult>((resolve) => {
+            this.debounceTimer = setTimeout(async () => {
+                try {
+                    const result = await this.validator.validate(upperWord);
+                    this.pendingValidation.state = 'completed';
+                    this.pendingValidation.result = result;
+                    resolve(result);
+                } catch (error) {
+                    console.error(`[WordValidationManager] ❌ 验证失败: ${upperWord}`, error);
+                    const errorResult: ValidateResult = {
+                        valid: false,
+                        source: 'offline',
+                        latency: 0,
+                        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR'
+                    };
+                    this.pendingValidation.state = 'timeout';
+                    this.pendingValidation.result = errorResult;
+                    resolve(errorResult);
+                }
+            }, 150); // 轻量防抖：150ms
+        });
     }
 
     /**

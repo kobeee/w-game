@@ -62,12 +62,18 @@ class NetworkError extends Error {
  * 网络服务单例
  */
 export class NetworkService {
-    // Cloudflare Worker 转发路由：/w-game-service -> 后端 API
-    // 示例：https://example.com/w-game-service
-    // 其中 example.com 是你的 Cloudflare Worker 域名
-    private static readonly BASE_URL = 'https://ai.elvis1949.cloudns.pro/w-game-service';
+    // Cloudflare Worker 直连 Gemini 代理（客户端无需感知模型）
+    // 统一调用 /gemini/generate，由 Worker 选择默认/指定模型并转发到官方
+    private static readonly BASE_URL = 'https://ai.elvis1949.cloudns.pro/gemini';
+    private static readonly GENERATE_PATH = '/generate';
     private static readonly DEFAULT_TIMEOUT = 5000; // 5秒，提高容错
     private static readonly MAX_RETRIES = 1; // 最多重试 1 次
+    private static readonly WORD_CACHE_TTL_MS = 60 * 60 * 1000; // 1小时
+
+    // 会话内结果缓存（避免重复相同单词验证）
+    private static wordCache: Map<string, { value: { valid: boolean; definition?: string; source: 'cache' | 'gemini' }, expireAt: number }> = new Map();
+    // 单飞：相同单词的并发请求共用同一个Promise
+    private static inflight: Map<string, Promise<{ request_id?: string; valid: boolean; definition?: string; source?: string; word?: string; latency_ms?: number; checked_at?: string; error_code?: number; message?: string }>> = new Map();
 
     /**
      * POST 请求（统一走 Cloudflare Worker，明文 JSON；Worker 加密后转发后端）
@@ -207,6 +213,10 @@ export class NetworkService {
                     const edgeError = res.headers.get('X-Edge-Error');
                     const edgeDebug = res.headers.get('X-Edge-Debug');
                     const upstreamStatus = res.headers.get('X-Upstream-Status');
+                    const edgeCache = res.headers.get('X-Edge-Cache');
+                    if (edgeError || edgeDebug || upstreamStatus || edgeCache) {
+                        console.debug('[NetworkService] headers:', { edgeError, edgeDebug, upstreamStatus, edgeCache });
+                    }
                     // 静默成功响应，减少不必要日志
 
                     if (res.ok) {
@@ -323,25 +333,47 @@ export class NetworkService {
     } | null> {
             const t0 = Date.now();
             try {
-                const response = await NetworkService.post<{
-                request_id?: string;
-                valid: boolean;
-                definition?: string;
-                source?: string;
-                word?: string;
-                latency_ms?: number;
-                checked_at?: string;
-                error_code?: number;
-                message?: string;
-            }>(
-                '/api/v1/word/verify',  // 统一端点，由 Worker 加密转发
-                { word: word.toUpperCase() },
-                2000
-            );
+                const upper = word.toUpperCase();
+
+                // 1) 会话内缓存命中
+                const cached = NetworkService.wordCache.get(upper);
+                if (cached && cached.expireAt > Date.now()) {
+                    const duration = Date.now() - t0;
+                    const resolvedSource = (cached.value.source === 'cache' ? 'cache' : 'gemini') as 'cache' | 'gemini';
+                    const isValid = !!cached.value.valid;
+                    console.log(`[NetworkService] 验证 ${upper} → valid=${isValid} source=${resolvedSource} id=session-cache 耗时=${duration}ms`);
+                    return {
+                        valid: cached.value.valid,
+                        definition: cached.value.definition,
+                        source: resolvedSource
+                    };
+                }
+
+                // 2) 单飞：相同单词并发复用
+                let inflight = NetworkService.inflight.get(upper);
+                if (!inflight) {
+                    inflight = NetworkService.callGeminiValidate(upper);
+                    NetworkService.inflight.set(upper, inflight);
+                }
+
+                const response = await inflight;
+                NetworkService.inflight.delete(upper);
             const duration = Date.now() - t0;
-            const resolvedSource = (response?.source === 'cache' || response?.source === 'redis' ? 'cache' : 'gemini') as 'cache' | 'gemini';
+            // ✅ 修复：优先使用响应中的 source（区分 cache/gemini）
+            const resolvedSource = (response && response.source) || 'gemini';
             const isValid = !!(response && response.valid);
-            console.log(`[NetworkService] 验证 ${word.toUpperCase()} → valid=${isValid} source=${resolvedSource}${response?.request_id ? ' id=' + response.request_id : ''} 耗时=${duration}ms`);
+            const definition = response && response.definition ? response.definition : '无';
+                console.log(`[NetworkService] 验证 ${upper} → valid=${isValid} definition=${definition} source=${resolvedSource} 耗时=${duration}ms`);
+
+                // 写入会话缓存
+                NetworkService.wordCache.set(upper, {
+                    value: {
+                        valid: !!response.valid,
+                        definition: response.definition,
+                        source: resolvedSource
+                    },
+                    expireAt: Date.now() + NetworkService.WORD_CACHE_TTL_MS
+                });
 
             if (isValid) {
                 return {
@@ -360,6 +392,80 @@ export class NetworkService {
             console.error(`[NetworkService] ❌ 单词验证错误: ${word} (耗时=${duration}ms)`, error);
             return null;
         }
+    }
+
+    /**
+     * 直接调用 Gemini 进行验证，Worker 会在边缘注入 API Key
+     */
+    private static async callGeminiValidate(wordUpper: string): Promise<{ valid: boolean; definition?: string }> {
+        const endpoint = `${NetworkService.GENERATE_PATH}`;
+        const prompt = `Return JSON only. Validate if the input is a valid English word. Input: "${wordUpper}". 
+Schema: {"valid": boolean, "definition": string}. Rules: 
+- Respond strictly as JSON without markdown or extra text.
+- If not a valid dictionary word, set valid=false and definition=""`;
+
+        const body = {
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+                temperature: 0.0,
+                maxOutputTokens: 32,
+                candidateCount: 1,
+                response_mime_type: 'application/json',
+                response_schema: {
+                    type: 'OBJECT',
+                    properties: {
+                        valid: { type: 'BOOLEAN' },
+                        definition: { type: 'STRING' }
+                    },
+                    required: ['valid', 'definition']
+                }
+            }
+        };
+
+        type GeminiResp = any;
+        const resp = await NetworkService.post<GeminiResp>(endpoint, body, NetworkService.DEFAULT_TIMEOUT);
+        // 解析 Gemini 返回（candidates[0].content.parts[0].text 可能是 JSON 字符串）
+        const text = NetworkService.extractTextFromGemini(resp);
+        const parsed = NetworkService.tryParseJson(text);
+        if (parsed && typeof parsed.valid === 'boolean') {
+            return { valid: !!parsed.valid, definition: typeof parsed.definition === 'string' ? parsed.definition : '' };
+        }
+        // 容错：若已是对象
+        if (resp && typeof resp.valid === 'boolean') {
+            return { valid: !!resp.valid, definition: typeof resp.definition === 'string' ? resp.definition : '' };
+        }
+        // 解析失败视为无效
+        return { valid: false, definition: '' };
+    }
+
+    private static extractTextFromGemini(resp: any): string {
+        try {
+            const c = resp && resp.candidates && resp.candidates[0];
+            const p = c && c.content && c.content.parts && c.content.parts[0];
+            const t = p && (p.text || p.inlineData);
+            return typeof t === 'string' ? t : '';
+        } catch (_) {
+            return '';
+        }
+    }
+
+    private static tryParseJson(raw: string): any | null {
+        if (!raw) return null;
+        const clean = raw
+            .replace(/^```json\\s*/i, '')
+            .replace(/^```\\s*/i, '')
+            .replace(/```\\s*$/i, '')
+            .trim();
+        try {
+            return JSON.parse(clean);
+        } catch (_) {
+            // 截取第一个 {...} 片段再尝试
+            const m = clean.match(/\\{[\\s\\S]*\\}/);
+            if (m) {
+                try { return JSON.parse(m[0]); } catch (_) { /* ignore */ }
+            }
+        }
+        return null;
     }
 }
 
