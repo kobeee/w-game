@@ -2,48 +2,75 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## **省钱**需知
-**为了节省token，以及不让上下文过于长，不要太啰嗦，不要动不动就搞一堆的总结文档**
-**除非调试需要，否则请不要添加无效日志打印，并且，在调试功能通过后，主动清楚无效日志打印**
-**读取代码自动跳过注释**
-**docs/archive目录是CHANGELOG等其他文件的归档目录，非必要不读取，除非有明确引用目录里的指定文件**
-
-## 绝对遵守
-1. 不要动不动就完美，谦虚一点
-2. 不要动不动就整一堆的md文件
-3. 不要动不动就写一堆的脚本
+## 团队约定（必读）
+- **省token**: 不啰嗦、不生成无用文档、读代码跳注释、非必要不读 docs/archive
+- **不自动提交**: 禁止 git push 或 git commit，需要用户明确同意
+- **不追求完美**: 谦虚务实，实践检验，有疑问就问
+- **代码有效**: 不添加调试用的无效日志，调试完后主动清除
 
 ## 快速开始
 
-### 核心命令
+### Cocos Creator 工作流
 ```bash
-# 在Cocos Creator中打开项目
-# 项目路径: src/cocos/
+# 1. 在 Cocos Creator 中打开项目
+#    路径: src/cocos/
+#    版本: 3.8.7
 
-# 微信小游戏构建和预览
-# 1. Cocos Creator菜单：项目 → 构建发布
-# 2. 选择微信小游戏平台，填写资源服务器地址（如需远程资源）
-# 3. 点击"构建"按钮
-# 4. 构建完成后，使用微信开发者工具打开 src/cocos/build/wechatgame/ 目录
+# 2. 开发调试
+#    - 在编辑器中点 Play 按钮预览
+#    - 查看 Console 检查日志
+#    - 修改脚本后自动热重载
 
-# 启动远程资源服务器（解决4MB包体限制）
+# 3. 构建微信小游戏
+#    菜单: 项目 → 构建发布
+#    - 选择 "WeChat Mini Game" 平台
+#    - 竖屏方向
+#    - 如需远程资源，填写资源服务器地址（如 http://localhost:9090）
+#    - 点击"构建"，完成后用微信开发者工具打开 src/cocos/build/wechatgame/
+
+# 4. 启动资源服务器（解决4MB包体限制）
 cd tools/remote-resources/
 ./deploy.sh
-# 或使用Docker:
+# 或 Docker:
 docker-compose up -d
 ```
 
+### 常用快捷任务
+| 任务 | 位置 | 操作 |
+|------|------|------|
+| 查看游戏日志 | src/cocos/assets/scripts/ | 编辑器 Console 标签页 |
+| 修改场景 | src/cocos/assets/scenes/ | Cocos Creator 场景编辑器 |
+| 添加词库 | src/cocos/assets/resources/words/ | 直接编辑 JSON 或上传新文件 |
+| 查看开发记录 | CHANGELOG.md | 末尾为最新记录 |
+| 调试网格布局 | src/cocos/assets/scripts/ui/GameBoard.ts | 查看纯数学定位法 |
+
 ### 关键路径
-- **Cocos项目根**: `src/cocos/`
+- **Cocos 项目根**: `src/cocos/`
 - **脚本源码**: `src/cocos/assets/scripts/`
-- **场景文件**: `src/cocos/assets/scenes/` (Boot → Menu → Game → Result)
-- **远程资源**: `tools/remote-resources/remote/` (Bundle资源部署目录)
+- **场景文件**: `src/cocos/assets/scenes/` (Boot → Menu → Game/StackGameScene → Result)
+- **远程资源**: `tools/remote-resources/remote/` (Bundle 资源部署目录)
 - **词库数据**: `src/cocos/assets/resources/words/words_core.json`
-- **开发日志**: `CHANGELOG.md` (最新记录在文件末尾)
+- **Cloudflare Worker**: `tools/cloudflare/worker.js` (Gemini API 代理、密钥注入、边缘缓存)
+- **开发日志**: `CHANGELOG.md` (末尾为最新记录)
+
+### 快速找代码
+| 功能 | 文件路径 | 说明 |
+|------|--------|------|
+| 主菜单逻辑 | `src/cocos/.../MainMenu.ts` | 玩法模式选择、配置管理 |
+| 小试牛刀 | `src/cocos/.../GameApp.ts` + `GameBoard.ts` | 5×5 网格、拼词验证 |
+| 叠叠乐 | `src/cocos/.../StackGameApp.ts` + `StackBoard.ts` | 堆叠消除、关卡递增 |
+| 字符匹配 | `src/cocos/.../core/WordMatcher.ts` | 后缀验证算法（ABCD → BCD → CD） |
+| 词汇服务 | `src/cocos/.../data/GlossService.ts` | 词库加载、生词本管理 |
+| 网络验证 | `src/cocos/.../services/NetworkService.ts` | Gemini 调用、会话缓存、单飞去重 |
+| Worker 代理 | `tools/cloudflare/worker.js` | Gemini API 代理、密钥注入、边缘缓存 |
 
 ## 项目概述
 
-这是一个名为"拯救萌宠·猜单词"（w-game）的微信小游戏项目，使用Cocos Creator 3.8.7 + TypeScript开发。游戏核心玩法是在5×5字母网格中按正确顺序点击拼出单词。
+这是一个名为"拯救萌宠·猜单词"（w-game）的微信小游戏项目，使用 Cocos Creator 3.8.7 + TypeScript 开发。游戏拥有 **2 种玩法模式**：
+- **小试牛刀**（BASIC）：5×5 字母网格单词拼写，60秒时间限制
+- **叠叠乐**（STACK）：字母堆叠消除玩法，无限关卡递增难度
+
+V0.1 已完成核心离线单机版，V0.2+ 接入后端单词验证、排行榜等功能。
 
 ## 技术架构
 
@@ -62,10 +89,10 @@ docker-compose up -d
     - `data/` - 数据管理
   - `assets/ui/` - UI资源（按钮、背景、图标等）
 
-### 后端（V0.3+版本才接入）
-- **框架**: Python FastAPI
-- **数据库**: PostgreSQL + Redis
-- **V0.1版本完全离线**，无需后端
+### 后端和边缘计算
+- **Cloudflare Worker**（当前使用）：Gemini API 代理、密钥注入、边缘缓存
+- **Python FastAPI**（档案用）：`src/backend/` 目录保留历史代码，当前不使用
+- **词库验证**：全量走 Gemini（通过 Cloudflare Worker），本地 JSON 词库作备选
 
 ## 核心架构设计
 
@@ -73,29 +100,34 @@ docker-compose up -d
 
 #### 应用层 (`assets/scripts/app/`)
 - **LoadingScene.ts**: 启动场景，初始化预加载管理器
-- **PreloadManager.ts**: 远程Bundle预加载系统（bg/title/tiles/modal），采用`bundle.load()`完全加载策略
-- **MainMenu.ts**: 主菜单场景，游戏入口
-- **GameApp.ts**: 游戏主逻辑控制器，管理游戏循环、目标词生成、答题判定
+- **PreloadManager.ts**: 远程 Bundle 预加载系统（bg/title/tiles/modal），采用 `bundle.load()` 完全加载策略
+- **MainMenu.ts**: 主菜单场景，游戏入口，支持两种玩法模式切换（BASIC/STACK）
+- **GameApp.ts**: 小试牛刀玩法主逻辑，管理游戏循环、目标词生成、答题判定
+- **StackGameApp.ts**: 叠叠乐玩法主逻辑，管理堆叠消除、关卡递增、实时单词验证
 - **ResultPage.ts**: 结果页面，显示成绩和生词本
 
 #### 核心逻辑层 (`assets/scripts/core/`)
 - **AssetLoader.ts**: 统一资源加载器单例，三级缓存检查（Bundle缓存 → 资源缓存 → 网络加载）
 
 #### UI层 (`assets/scripts/ui/`)
-- **GameBoard.ts**: 5×5字母网格管理器
-  - 使用纯数学定位法，以中心格子(2,2)为原点计算每个瓦片位置
-  - 完全抛弃Layout组件，避免奇数网格布局问题
-  - 4方向连接算法（移除斜线连接，提升可见性）
-- **LetterTile.ts**: 单个字母瓦片组件，5种状态（selectable/highlight/correct/wrong/disabled）
-- **HUD.ts**: 游戏HUD，显示目标词、倒计时、分数
+- **GameBoard.ts**: 小试牛刀 5×5 字母网格管理器
+  - 使用纯数学定位法，以中心格子(2,2)为原点计算瓦片位置
+  - 4 方向连接算法（无斜线，提升可见性）
+- **StackBoard.ts**: 叠叠乐堆叠网格管理器，支持卡牌消除和重力下落
+- **LetterTile.ts**: 单个字母瓦片组件，多种状态（selectable/highlight/correct/wrong/disabled）
+- **SlotQueue.ts**: 选择槽队列，管理已选字母的显示和清空
+- **HUD.ts**: 游戏 HUD，显示目标词、倒计时、分数、难度等
+- **LoadingUI.ts**: 加载页面 UI，显示资源加载进度
 - **GlossSheet.ts**: 词义弹窗（Bottom Sheet），支持自动/手动展示、收藏功能
 
 #### 数据层 (`assets/scripts/data/`)
 - **GlossService.ts**: 词汇服务
-  - 词库加载和查询（支持内嵌/外部JSON）
+  - 词库加载和查询（支持内嵌/外部 JSON）
   - 词义解释和归一化
-  - 生词本管理（localStorage持久化）
+  - 生词本管理（localStorage 持久化）
 - **WordBank.ts**: 单词银行，按长度分桶存储，支持目标词随机选择
+- **GameMode.ts**: 游戏模式枚举和配置（BASIC/STACK）
+- **StackTypes.ts**: 叠叠乐数据结构定义（Card、WordMatch、Level 等）
 
 #### 工具层 (`assets/scripts/util/`)
 - **AudioMgr.ts**: 音效管理器
@@ -182,29 +214,40 @@ GameApp.onCorrectAnswer()
 - **缓冲槽**: 3格，溢出扣5秒
 - **词库**: 支持3-6字母单词，将扩展至7字母
 
-### 核心游戏机制
-1. **字母网格**: 叠层显示，只有无遮挡的字母才能点击
-2. **拼词规则**: 必须按正确顺序点击字母
-3. **错误处理**: 误点字母进入缓冲槽，满3格扣时间
-4. **可见性**: 可点击字母高亮，不可点击半透明
+### 核心游戏机制（玩法对比）
+
+#### 小试牛刀（BASIC）
+1. **字母网格**: 5×5 叠层显示，只有无遮挡字母可点击
+2. **拼词规则**: 必须按正确顺序点击字母，4 方向连接（上下左右）
+3. **时间限制**: 60 秒游戏时长
+4. **错误处理**: 误点字母进入缓冲槽，满 3 格扣 5 秒
 5. **提示系统**: 顶部常驻显示下一个应选字母
+
+#### 叠叠乐（STACK）
+1. **堆叠消除**: 下落的字母卡与目标单词匹配则消除
+2. **关卡递增**: 难度逐关递增，关卡数量无限
+3. **后缀匹配**: 支持单词后缀验证（如 ABCD 匹配 BCD、CD）
+4. **实时网络验证**: 可选接入后端 Gemini 词库验证（V0.2+）
+5. **堆积限制**: 堆积过高则游戏结束
 
 ## 版本规划
 
-### V0.1（当前目标）
-- 纯离线单机版本
-- 单个目标词拼写
-- 基础UI和音效
-- 不包含：萌宠、网络功能、词义解释
+### V0.1（✅ 已完成）
+- ✅ 两种玩法模式（小试牛刀 + 叠叠乐）
+- ✅ 纯离线单机版本
+- ✅ 基础 UI 和音效
+- ✅ 生词本管理（localStorage 持久化）
 
-### V0.2+
-- 优化游戏体验
-- 添加萌宠元素
+### V0.2（当前进行中）
+- ✅ Cloudflare Worker Gemini 代理（密钥注入、边缘缓存）
+- ✅ 客户端网络服务（会话缓存、单飞去重、防抖）
+- ✅ 后缀验证算法（ABCD → BCD → CD）
+- 性能优化迭代：边缘缓存命中率、网络延迟优化
 
 ### V0.3+
-- 接入Python后端
-- 每日关卡种子
-- 排行榜系统
+- 每日关卡种子、排行榜系统
+- 萌宠角色系统
+- 完整后端服务
 
 ## 测试和验证
 
@@ -251,12 +294,20 @@ GameApp.onCorrectAnswer()
 4. **UI/UX** - 清晰的状态提示和反馈
 5. **性能优化** - 保证流畅的点击响应
 
-## 重要提醒
+## 当前重点和约束
 
-- V0.1版本专注于**核心玩法可玩**，暂不实现复杂功能
-- 所有"需要服务器"的功能延后到V0.3+
-- 优先保证**完成率**和**用户体验**，而非功能丰富度
-- 误点率是关键指标，可点/不可点的视觉区分要明显
+### V0.2 开发重点（进行中）
+- Worker 边缘缓存命中率优化
+- 客户端网络延迟优化（防抖调参、缓存策略）
+- 本地词库 + Gemini 混合验证稳定性
+- 移动网络环境下的超时和重试优化
+
+### 关键约束
+- **不依赖外部库**: 仅用 Cocos Creator 原生 API
+- **微信小游戏兼容**: 避免 ES2017+ 语法（如 `padStart`）
+- **包体积控制**: 本地包体 < 4MB（远程 Bundle 分离）
+- **零密钥暴露**: Gemini API Key 仅在 Worker 中存储，客户端无感知
+- **无后端依赖**: 仅通过 Worker 代理访问 Gemini，无本地后端服务
 
 ---
 
@@ -453,38 +504,19 @@ GameApp.onCorrectAnswer()
 
 ---
 
-## 规则文件说明
+## 规则文件快速导航
 
-本项目的完整开发规范存储在 `.cursor/rules/` 目录下，按以下结构组织：
+`.cursor/rules/` 包含完整开发规范。**本项目主要使用**：
 
-### 基础规则 (`.cursor/rules/base/`)
-- `core.mdc` - 核心开发原则、响应语言、代码质量要求
-- `general.mdc` - 通用规范、项目结构、重构原则与经验教训
-- `project-structure.mdc` - 详细的项目目录结构规范
-- `document.mdc` - 文档编写规范、开发记录要求
-- `env-management.mdc` - 环境变量管理协作流程
-- `mermaid-syntax.mdc` - Mermaid 图表语法规则
+| 文件 | 用途 | 快速查询 |
+|------|------|--------|
+| `.cursor/rules/base/core.mdc` | 核心原则 | 代码质量、响应语言、提交规范 |
+| `.cursor/rules/languages/typescript.mdc` | TypeScript | 类型系统、命名、接口设计 |
+| `.cursor/rules/frameworks/cocos_creator.md` | **本项目主框架** | Bundle、资源加载、UI、事件 |
 
-### 语言规则 (`.cursor/rules/languages/`)
-- `typescript.mdc` - TypeScript 编码规则和最佳实践
-- `python.mdc` - Python 开发规范和最佳实践
-- `css.mdc`, `java.mdc`, `kotlin.mdc`, `golang.mdc`, `c++.mdc` - 其他语言规范
-- `wxml.mdc`, `wxss.mdc` - 微信小程序相关语言规范
-
-### 框架规则 (`.cursor/rules/frameworks/`)
-- `cocos_creator.md` - **Cocos Creator 3.8.7 开发规范（本项目主要框架）**
-- `fastapi.mdc` - FastAPI 开发规范
-- `react.mdc`, `nextjs.mdc`, `vuejs.mdc` - 前端框架规范
-- `flutter.mdc`, `react-native.mdc` - 移动开发框架规范
-- `django.mdc`, `flask.mdc`, `springboot.mdc` - 其他后端框架规范
-- `android.mdc`, `swiftui.mdc` - 原生移动开发规范
-- `tailwind.mdc` - CSS框架规范
-
-**注意**: 虽然项目包含多种技术栈的规范文件，但本w-game项目主要使用：
-- **前端**: TypeScript + Cocos Creator 3.8.7（微信小游戏）
-- **后端**: Python + FastAPI (V0.3+版本)
-
-其他规则文件为未来扩展或其他项目预留。
+**其他规范** (仅在需要时查阅)：
+- `.cursor/rules/base/general.mdc` - 项目结构、重构原则
+- `.cursor/rules/base/document.mdc` - 文档和 CHANGELOG 规范
 
 ## 常见问题与解决方案
 
@@ -624,11 +656,40 @@ ls tools/remote-resources/remote/bg/
 docker-compose -f tools/remote-resources/docker-compose.yml logs
 ```
 
-## **你的任务**
+## Git 工作流
+
+### 提交规范
+- **禁止自动提交**: 所有 commit/push 需要用户明确同意
+- **提交信息格式**:
+  ```
+  类型: 描述
+
+  - 详细内容 1
+  - 详细内容 2
+
+  修改文件:
+  - src/cocos/assets/scripts/app/GameApp.ts
+  - src/cocos/assets/scripts/ui/GameBoard.ts
+  ```
+- **提交前检查**:
+  - 无调试日志
+  - 所有修改都被提及
+  - CHANGELOG.md 已更新（推送到末尾）
+
+### 当前分支
+- 当前分支: `v1`
+- 合并目标: `main`
+
+---
+
+## 编码任务模板
+
 你是我的游戏项目协作程序员。环境：Cocos Creator 3.8.7（TypeScript, 2D, 微信小游戏）。
 从现在起，你对每个任务必须做到：
-- 在**指定路径**新建/修改文件，**给出完整代码**（从 import 到文件结尾），并解释如何在**场景层级**上绑定组件/节点。
-- **不引入任何第三方依赖**；用 Creator 自带 API（resources.load、JsonAsset、director.loadScene 等）。
-- 资源路径基于 assets/resources/（可用 resources.load("folder/name", JsonAsset)）。
-- 严格 TypeScript，export 组件类，并给出节点上的**序列化属性**（@property）。
-- 输出后附**自测步骤**（如何在编辑器里点几下就能看到日志或 UI 行为）。
+
+1. **完整代码** - 在**指定路径**新建/修改文件，**给出完整代码**（从 import 到文件结尾）
+2. **绑定说明** - 解释如何在**场景层级**上绑定组件/节点（序列化属性 @property）
+3. **无外部依赖** - 不引入第三方库，只用 Creator 自带 API
+4. **资源路径** - 基于 assets/resources/，用 resources.load("folder/name", JsonAsset)
+5. **严格 TS** - 严格 TypeScript 模式，export 组件类
+6. **自测步骤** - 输出后附自测步骤（编辑器里点几下看日志/UI行为）
