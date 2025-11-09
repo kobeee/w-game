@@ -359,8 +359,8 @@ export class NetworkService {
                 const response = await inflight;
                 NetworkService.inflight.delete(upper);
             const duration = Date.now() - t0;
-            // ✅ 修复：优先使用响应中的 source（区分 cache/gemini）
-            const resolvedSource = (response && response.source) || 'gemini';
+            // ✅ 修复：优先使用响应中的 source（区分 cache/gemini），并做严格收窄
+            const resolvedSource = (response && response.source === 'cache') ? 'cache' : 'gemini' as 'cache' | 'gemini';
             const isValid = !!(response && response.valid);
             const definition = response && response.definition ? response.definition : '无';
                 console.log(`[NetworkService] 验证 ${upper} → valid=${isValid} definition=${definition} source=${resolvedSource} 耗时=${duration}ms`);
@@ -399,16 +399,19 @@ export class NetworkService {
      */
     private static async callGeminiValidate(wordUpper: string): Promise<{ valid: boolean; definition?: string }> {
         const endpoint = `${NetworkService.GENERATE_PATH}`;
-        const prompt = `Return JSON only. Validate if the input is a valid English word. Input: "${wordUpper}". 
-Schema: {"valid": boolean, "definition": string}. Rules: 
-- Respond strictly as JSON without markdown or extra text.
-- If not a valid dictionary word, set valid=false and definition=""`;
+        const prompt = `你是词典校验助手。请仅返回 JSON。
+任务：判断输入是否为有效的英语单词（包含俚语、专有名词）。
+若有效，请用简体中文在 20 字以内给出简明释义；若无效，释义用空字符串。
+输入："${wordUpper}"
+输出 JSON 严格符合：
+{"valid": true/false, "definition": "中文释义或空字符串"}
+不得输出除 JSON 外的任何字符（禁止 Markdown、代码块、解释说明）。`;
 
         const body = {
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
                 temperature: 0.0,
-                maxOutputTokens: 32,
+                maxOutputTokens: 64,
                 candidateCount: 1,
                 response_mime_type: 'application/json',
                 response_schema: {

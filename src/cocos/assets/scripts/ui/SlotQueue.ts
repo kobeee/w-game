@@ -246,6 +246,13 @@ export class SlotQueue extends Component {
 
         // 检查是否匹配单词（由外部WordMatcher处理）
         this.node.emit('letter-added', this.slotManager.getLetters());
+
+        // ✅ 新增：若“本次添加后”恰好达到满容量，立刻广播槽满事件
+        // 之前的逻辑只在“添加前已满”时返回并触发 slot-full，
+        // 导致需要再点一次卡片才会触发结束判定。
+        if (this.slotManager.isFull()) {
+            this.node.emit('slot-full');
+        }
     }
 
     /**
@@ -638,6 +645,20 @@ export class SlotQueue extends Component {
     public getLetters(): string[] {
         return this.slotManager.getLetters();
     }
+
+		/**
+		 * 获取指定 slot 索引的世界坐标
+		 */
+		public getSlotWorldPosition(index: number): Vec3 | null {
+			if (index < 0 || index >= this.slotNodes.length) {
+				return null;
+			}
+			const slotNode = this.slotNodes[index];
+			if (!slotNode || !slotNode.isValid) {
+				return null;
+			}
+			return slotNode.getWorldPosition();
+		}
 
     /**
      * 检查是否已满

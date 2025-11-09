@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, director, Sprite, UITransform, Button } from 'cc';
+import { _decorator, Component, Node, Label, director, Sprite, UITransform, Button, Prefab, Vec3, ScrollView } from 'cc';
 import { LevelGenerator } from '../core/LevelGenerator';
 import { IncrementalWordMatcher } from '../core/WordMatcher';
 import { StackBoard } from '../ui/StackBoard';
@@ -8,6 +8,10 @@ import { GlossService } from '../data/GlossService';
 import { AssetLoader } from '../core/AssetLoader';
 import { GridLayoutLoader } from '../core/GridLayoutLoader';
 import { WordValidationManager } from '../services/WordValidationManager';
+import { DefinitionHintPool } from '../ui/DefinitionHintPool';
+import { DefinitionHintView } from '../ui/DefinitionHintView';
+import { WordStat, GameResult } from '../types/words';
+import { HINT_STAY_MS } from '../config/word-validate';
 
 const { ccclass, property } = _decorator;
 
@@ -37,6 +41,26 @@ export class StackGameApp extends Component {
     @property(Label)
     public scoreLabel: Label = null!;
 
+    // 结果页分数（与 TopHUD 的 scoreLabel 分离）
+    @property(Label)
+    public resultScoreLabel: Label = null!;
+
+    // 结果页 UI（新增）
+    @property(Label)
+    public timeLabel: Label = null!;
+
+    @property(Label)
+    public wordsLabel: Label = null!;
+
+    @property(ScrollView)
+    public wordsScrollView: ScrollView = null!;
+
+    @property(Button)
+    public retryButton: Button = null!;
+
+    @property(Button)
+    public backButton: Button = null!;
+
     @property(Label)
     public clearRateLabel: Label = null!;
 
@@ -49,14 +73,33 @@ export class StackGameApp extends Component {
     @property(Button)
     public endGameButton: Button = null!;
 
+    // 释义气泡（编辑器绑定 DefinitionHint.prefab 与容器节点 DefinitionHints）
+    @property(Prefab)
+    public definitionHintPrefab: Prefab = null!;
+
+    @property(Node)
+    public definitionHintsRoot: Node = null!;
+
     private currentLevel: Level | null = null;
     private wordMatcher: IWordMatcher | null = null; // ✅ 延迟初始化，确保GlossService已加载
     private gameState: GameState = GameState.IDLE;
     private score: number = 0;
-    private wordsCleared: string[] = [];
+    private wordsCleared: WordStat[] = [];
     private currentMatch: WordMatch | null = null;
     private startTime: number = 0;
     private validationManager: WordValidationManager = new WordValidationManager();
+    private hintPool: DefinitionHintPool | null = null;
+    private longestWordLen: number = 0;
+    /**
+     * 输入推进版本号：
+     * - 每次牌槽内容变化（增加/移除）或玩家继续输入时自增
+     * - 用于丢弃“输入推进后才返回的旧验证结果”，避免误触发消除
+     */
+    private inputVersion: number = 0;
+    // 正在进行的网络后缀验证批次数（用于“槽满时延迟结束”判断）
+    private validationsInFlight: number = 0;
+    // 延迟结束原因（例如槽满时先等待验证结果）
+    private pendingEndReason: string | null = null;
 
     protected async onLoad(): Promise<void> {
         // 初始化AI单词验证系统
@@ -124,6 +167,20 @@ export class StackGameApp extends Component {
         }
         
         this.setupEndGameButton();
+
+        // 初始化释义气泡对象池（若已在编辑器绑定）
+        if (this.definitionHintPrefab && this.definitionHintsRoot) {
+            this.hintPool = this.node.addComponent(DefinitionHintPool);
+            this.hintPool.initialize(this.definitionHintPrefab, this.definitionHintsRoot);
+        }
+
+        // 结果页按钮绑定（如果未在 Inspector 配置点击事件，这里兜底）
+        if (this.retryButton && this.retryButton.node) {
+            this.retryButton.node.on(Button.EventType.CLICK, this.onRetryClicked, this);
+        }
+        if (this.backButton && this.backButton.node) {
+            this.backButton.node.on(Button.EventType.CLICK, this.onBackToMenuClicked, this);
+        }
     }
 
     protected async start(): Promise<void> {
@@ -356,7 +413,9 @@ export class StackGameApp extends Component {
 
             // ✅ 网络验证后缀（MABAN → 验证 MABAN/ABAN/BAN）
             if (currentWord.length >= 3) {
-                this.validateSuffixes(currentLetters);
+                // 自增输入版本号，并将快照传入验证批次
+                const ver = ++this.inputVersion;
+                this.validateSuffixes(currentLetters, ver);
             }
         });
     }
@@ -364,9 +423,13 @@ export class StackGameApp extends Component {
     /**
      * 并发验证所有后缀（MABAN → 并发验证 MABAN/ABAN/BAN），取最长匹配
      */
-    private validateSuffixes(letters: string[]): void {
+    private validateSuffixes(letters: string[], versionSnapshot?: number): void {
+        // 记录发起时的版本号（若未显式传入，则取当前版本的快照）
+        const versionAtDispatch = (typeof versionSnapshot === 'number') ? versionSnapshot : this.inputVersion;
         const totalLen = letters.length;
         const suffixPromises: Array<Promise<{ suffix: string; startIdx: number; valid: boolean }>> = [];
+        // 标记本批次开始
+        this.validationsInFlight++;
 
         // 生成所有后缀并发验证
         for (let leftCut = 0; leftCut <= totalLen - 3; leftCut++) {
@@ -390,6 +453,12 @@ export class StackGameApp extends Component {
 
         // 等待所有验证完成，取最长的valid=true后缀
         Promise.all(suffixPromises).then(results => {
+            // 若期间输入已推进（版本号变化），丢弃本批次结果
+            if (versionAtDispatch !== this.inputVersion) {
+                // 本批次作废，同时减少计数
+                this.validationsInFlight = Math.max(0, this.validationsInFlight - 1);
+                return;
+            }
             // 从长到短找第一个valid=true
             const validMatch = results.find(r => r.valid);
 
@@ -405,6 +474,17 @@ export class StackGameApp extends Component {
                 this.gameState = GameState.BLINKING;
                 this.slotQueue.startBlink(networkMatch);
             }
+        }).finally(() => {
+            // 本批次结束
+            this.validationsInFlight = Math.max(0, this.validationsInFlight - 1);
+            // 如果此前因为槽满而延迟结束，现在检查是否可以结束
+            if (this.pendingEndReason && this.validationsInFlight === 0) {
+                // 仍然槽满且没有正在闪烁时才结束
+                if (this.slotQueue.isFull() && this.gameState !== GameState.BLINKING && this.gameState !== GameState.ENDED) {
+                    this.endGame('牌槽已满');
+                }
+                this.pendingEndReason = null;
+            }
         });
     }
 
@@ -412,6 +492,15 @@ export class StackGameApp extends Component {
      * 字母添加到牌槽后回调
      */
     private onLetterAdded(letters: string[]): void {
+        // 任意新字母加入即视为“输入推进”，自增版本号
+        this.inputVersion++;
+
+        // 新输入发生时，取消旧的闪烁与自动消除倒计时，避免误消除旧匹配
+        if (this.gameState === GameState.BLINKING) {
+            this.slotQueue.stopBlink();
+            this.currentMatch = null;
+            this.gameState = GameState.PLAYING;
+        }
 
         // ✅ 防御性检查：WordMatcher是否存在
         if (!this.wordMatcher) {
@@ -477,8 +566,50 @@ export class StackGameApp extends Component {
         // 播放消除动画
         this.slotQueue.removeWord(match);
 
-        // 记录消除的单词
-        this.wordsCleared.push(match.word);
+		// 记录消除的单词
+        try {
+            const glossService = GlossService.getInstance();
+            const def = glossService.explain(match.word) || '';
+            const scoreDelta = this.calculateScore(match.word);
+            this.wordsCleared.push({
+                word: match.word,
+                valid: true,
+                scoreDelta,
+                definition: def,
+                clearedAtMs: Date.now()
+            });
+            this.longestWordLen = Math.max(this.longestWordLen, match.word.length);
+
+			// 展示释义气泡（定位到匹配区中心）
+			const centerIdx = Math.floor((match.startIdx + match.endIdx) / 2);
+			// @ts-expect-error: 运行时存在该方法
+			const centerPos = (this.slotQueue as any).getSlotWorldPosition
+				? (this.slotQueue as any).getSlotWorldPosition(centerIdx)
+				: null;
+			const fallbackPos = this.slotQueue.getNextSlotWorldPosition();
+			const worldPos = centerPos || fallbackPos || this.slotQueue.node.getWorldPosition();
+			this.showDefinitionHint(match.word, def, worldPos);
+        } catch (_) {
+            const scoreDelta = this.calculateScore(match.word);
+            this.wordsCleared.push({
+                word: match.word,
+                valid: true,
+                scoreDelta,
+                definition: '',
+                clearedAtMs: Date.now()
+            });
+            this.longestWordLen = Math.max(this.longestWordLen, match.word.length);
+
+			// 即使无本地释义也展示占位提示
+			const centerIdx = Math.floor((match.startIdx + match.endIdx) / 2);
+			// @ts-expect-error: 运行时存在该方法
+			const centerPos = (this.slotQueue as any).getSlotWorldPosition
+				? (this.slotQueue as any).getSlotWorldPosition(centerIdx)
+				: null;
+			const fallbackPos = this.slotQueue.getNextSlotWorldPosition();
+			const worldPos = centerPos || fallbackPos || this.slotQueue.node.getWorldPosition();
+			this.showDefinitionHint(match.word, '', worldPos);
+        }
 
         // 计算分数
         const wordScore = this.calculateScore(match.word);
@@ -500,6 +631,10 @@ export class StackGameApp extends Component {
 
         // 检查游戏是否结束
         this.checkGameEnd();
+        // 如果曾记录“等待结束”，但现在已不满，清空该标记
+        if (this.pendingEndReason && !this.slotQueue.isFull()) {
+            this.pendingEndReason = null;
+        }
     }
 
     /**
@@ -512,6 +647,11 @@ export class StackGameApp extends Component {
      * 牌槽已满回调
      */
     private onSlotFull(): void {
+        // 若当前有正在闪烁的匹配，或有验证在进行，则延迟结束到验证完成
+        if (this.gameState === GameState.BLINKING || this.validationsInFlight > 0 || this.currentMatch) {
+            this.pendingEndReason = 'SLOTS_FILLED';
+            return;
+        }
         this.endGame('牌槽已满');
     }
 
@@ -576,25 +716,84 @@ export class StackGameApp extends Component {
 
         const playDuration = Date.now() - this.startTime;
 
-        
+        const result: GameResult = {
+            score: this.score,
+            durationMs: playDuration,
+            wordsCleared: this.wordsCleared.slice().sort((a, b) => b.clearedAtMs - a.clearedAtMs),
+            longestWordLen: this.longestWordLen
+        };
 
-        // 显示结果面板
-        this.showResult(clearRate);
+        this.openResultPanel(result);
     }
 
     /**
-     * 显示结果面板
+     * 显示结果面板（填充数据与列表）
      */
-    private showResult(clearRate: number): void {
+    private openResultPanel(result: GameResult): void {
         if (!this.resultPanel) return;
 
         this.resultPanel.active = true;
+        // ✅ 确保结果面板渲染在最顶层，避免被字母卡片/槽位遮挡
+        if (this.resultPanel.parent && this.resultPanel.parent.isValid) {
+            const parent = this.resultPanel.parent;
+            const topIndex = parent.children.length - 1;
+            this.resultPanel.setSiblingIndex(topIndex);
+        }
 
-        // TODO: 设置结果面板的数据
-        // - 清除率
-        // - 总分
-        // - 消除单词列表
-        // - 排行榜按钮
+        // 分数（仅结果面板）
+        if (this.resultScoreLabel) {
+            this.resultScoreLabel.string = `得分：${result.score.toString().padStart(4, '0')}`;
+        }
+        // 用时
+        if (this.timeLabel) {
+            this.timeLabel.string = `用时：${this.formatDuration(result.durationMs)}`;
+        }
+        // 词数
+        if (this.wordsLabel) {
+            this.wordsLabel.string = `清除词数：${result.wordsCleared.length}`;
+        }
+        // 列表
+        if (this.wordsScrollView && this.wordsScrollView.content) {
+            const content = this.wordsScrollView.content;
+            // 清空旧项
+            content.removeAllChildren();
+            // 动态生成简易行（Word Definition Score）
+            for (const ws of result.wordsCleared) {
+                const row = new Node('Row');
+                const wordLabel = row.addComponent(Label);
+                wordLabel.string = `${ws.word.toUpperCase()}  ${ws.definition || '（无释义）'}  +${ws.scoreDelta}`;
+                wordLabel.fontSize = 22;
+                content.addChild(row);
+            }
+        }
+    }
+
+    private closeResultPanel(): void {
+        if (this.resultPanel) {
+            this.resultPanel.active = false;
+        }
+    }
+
+    public onRetryClicked(): void {
+        this.closeResultPanel();
+        // 重置状态
+        this.score = 0;
+        this.wordsCleared = [];
+        this.longestWordLen = 0;
+        this.gameState = GameState.IDLE;
+        this.startGame();
+    }
+
+    public onBackToMenuClicked(): void {
+        this.closeResultPanel();
+        this.backToMenu();
+    }
+
+    private formatDuration(durationMs: number): string {
+        const totalSec = Math.floor(durationMs / 1000);
+        const mm = Math.floor(totalSec / 60).toString().padStart(2, '0');
+        const ss = (totalSec % 60).toString().padStart(2, '0');
+        return `${mm}:${ss}`;
     }
 
     /**
@@ -631,6 +830,29 @@ export class StackGameApp extends Component {
      */
     public backToMenu(): void {
         director.loadScene('MainMenu');
+    }
+
+    /**
+     * 展示释义气泡（由上层在拿到 worldPos 后调用）
+     */
+    public showDefinitionHint(word: string, definition: string, worldPos: Vec3): void {
+        if (!this.hintPool || !this.definitionHintsRoot) return;
+        const uiTrans = this.definitionHintsRoot.getComponent(UITransform);
+        if (!uiTrans) return;
+        const local = uiTrans.convertToNodeSpaceAR(worldPos);
+        const node = this.hintPool.acquire();
+        // 提高Y偏移，避免被槽位遮挡
+        node.setPosition(local.x, local.y + 72, 0);
+        const view = node.getComponent(DefinitionHintView) || node.addComponent(DefinitionHintView);
+        const cleanDef = (definition || '').trim();
+        const text = cleanDef.length > 0
+            ? `${word.toUpperCase()}·${cleanDef}`
+            : `${word.toUpperCase()}`;
+        view.show(text);
+        // 停留后开始退场，并在退场完成时回收
+        setTimeout(() => {
+            view.dismiss(() => this.hintPool && this.hintPool.release(node));
+        }, HINT_STAY_MS);
     }
 
     /**

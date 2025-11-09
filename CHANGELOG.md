@@ -235,3 +235,98 @@
 >   - 输入 MABAN → 并发验证 MABAN/ABAN/BAN
 >   - BAN valid=true → 触发闪烁消除 BAN
 > - **文件**：`src/cocos/assets/scripts/app/StackGameApp.ts:364-409`
+>
+> ## 2025-11-08 - 🐛 [BUGFIX] 并发后缀校验互相取消导致未校验
+> - **问题**：如 `DARE` 场景，`DAR` 阶段会校验，但点 `E` 后 `DARE` 完全不校验；随后再点 `D` 时只出现 `RED`。表现为并发后缀验证被相互取消。
+> - **根因**：`WordValidationManager.validateConcurrent()` 使用“单一防抖计时器 + 单一 pending 状态”，在一次并发后缀（如 `DARE/ARE`）时，后创建的计时器会取消先前的计时器，前面的验证任务永不执行，导致最长有效后缀不被消费。
+> - **修复**：将防抖改为“按单词独立的计时器与 pending 状态”（互不干扰），保持对外 API 不变。
+> - **影响**：并发校验稳定，`DAR → E` 能正确得到 `DARE` 的闪烁反馈；整体验证链路行为符合“最长匹配优先”的设计。
+> - **文件**：`src/cocos/assets/scripts/services/WordValidationManager.ts`
+> - **回归建议**：
+>   - `D → A → R`：若 `ARE` 有效，应闪烁一次；
+>   - 点击“继续拼”后再点 `E`：应闪烁显示 `DARE`；
+>   - 再点 `D`：若不存在更长有效词，可能退化为 `RED`（取决于词库），属正常。
+
+> ## 2025-11-09 - ✨ [FEATURE] 释义与结果页方案落地（第一阶段：类型/网络/气泡脚本）
+> - 新增类型与常量
+>   - `src/cocos/assets/scripts/types/words.ts`：`ValidateResult`、`WordStat`、`GameResult` 等
+>   - `src/cocos/assets/scripts/config/word-validate.ts`：气泡动画/并发/网络超时等常量
+> - 网络层
+>   - `NetworkService.callGeminiValidate` 提示词改为中文并启用严格 `response_mime_type + response_schema`
+>   - 统一 `maxOutputTokens=64`，解析路径容错保留
+> - 校验编排
+>   - `WordValidationManager` 新增 `setOnValidationFinished` 回调，用于上层订阅验证完成（便于显示释义气泡/统计）
+> - UI 气泡
+>   - 新增 `DefinitionHintView.ts` 与 `DefinitionHintPool.ts`，支持 3 并发、淡入/停留/淡出与回收
+>   - `StackGameApp` 暴露 `definitionHintPrefab` 与 `definitionHintsRoot` 属性，并提供 `showDefinitionHint(...)` 方法
+> - 说明
+>   - 本次未改动结果页列表/按钮绑定；待 UI 绑定完成后可直接调用 `showDefinitionHint` 展示气泡
+>   - 词库四文件仍使用现有版本，待最终清洗资产提供后一次性整体替换（路径保持不变）
+>
+> ## 2025-11-09 - 🐛 [BUGFIX] 释义气泡不显示 + 结果页默认显示
+> - 场景（`src/cocos/assets/scenes/StackGameScene.scene`）
+>   - 将 `ResultPanel._active` 设为 `false`，并将场景中的 `ResultPanel` 绑定到 `StackGameApp.resultPanel`（修复“结果页启动即显示”）
+> - UI 气泡
+>   - `src/cocos/assets/scripts/ui/SlotQueue.ts` 新增 `getSlotWorldPosition(index)`，用于按槽位索引获取世界坐标
+>   - `src/cocos/assets/scripts/app/StackGameApp.ts` 在 `removeWord()` 中调用 `showDefinitionHint(...)`：以匹配区中心槽位坐标为基准显示中文释义（本地释义优先，无则占位），淡入后自动淡出并回收
+> - 验证
+>   - 命中并消除后在牌槽上方出现释义气泡；结果页默认隐藏，仅在 `endGame()` 后通过 `openResultPanel()` 弹出
+
+> ## 2025-11-09 - 🐛 [CRITICAL BUGFIX] 快速点击导致旧验证结果误消除
+> - 问题：当玩家快速点击导致输入推进（如 `ARE` 后立刻点 `T`），旧的验证结果（`ARE` 有效）可能在新输入后返回并触发闪烁/自动消除，违背“以最新输入为准”的交互预期。
+> - 修复：
+>   - `src/cocos/assets/scripts/app/StackGameApp.ts`
+>     - 引入 `inputVersion` 输入推进版本号；每次牌槽变更/新输入自增；`validateSuffixes(...)` 捕获版本快照，返回时若版本已变化则丢弃该批结果（防竞态）。
+>     - 在 `onLetterAdded(...)` 开头：自增版本号并显式取消旧的闪烁与自动消除倒计时（`stopBlink()` + 清空 `currentMatch`），确保旧匹配不会被误消除。
+> - 影响：输入推进后只依据“最新槽位内容”进行判定；旧验证结果不会再触发闪烁/清除。
+
+> ## 2025-11-09 - 🐛 [BUGFIX] 释义气泡空释义文案修正 + 结果页毛玻璃方案说明
+> - 释义气泡文案
+>   - 问题：空释义时显示为“WORD · 中文释义/空分隔符”，体验不合理。
+>   - 修复：无释义时仅显示单词本身；有释义时显示“WORD · 释义”。
+>   - 文件：
+>     - `src/cocos/assets/scripts/app/StackGameApp.ts`：`showDefinitionHint(...)` 改为对 `definition.trim()` 判空再决定是否添加分隔符。
+> - 稳定性补充（与前次提交配套）
+>   - `DefinitionHintView/Pool` 支持懒绑定与自动挂载脚本，Prefab 未挂脚本也可正常显示与淡出回收（并发上限 3）。
+>   - 文件：
+>     - `src/cocos/assets/scripts/ui/DefinitionHintView.ts`
+>     - `src/cocos/assets/scripts/ui/DefinitionHintPool.ts`
+> - 结果页“毛玻璃”实现指引（当前版本无内置 UI 模糊）
+>   - 说明：`Mask` 仅裁剪不模糊，不能产生毛玻璃。
+>   - 方案 A（推荐立即落地，零代码）：`Content` 内使用“离线模糊的背景图”+ 白色半透明叠加（可加轻噪点），`Mask` 负责全屏暗化与防穿透。
+>   - 方案 B（进阶、实时模糊）：`RenderTexture` 捕捉游戏内容 → `Content/BlurBG` 贴 `RT` + 高斯模糊材质（Shader），叠加半透明白与噪点获得液态玻璃观感。
+> - 验证指引
+>   - 释义气泡：无释义 → 只显示单词；有释义 → 显示“WORD · 释义”；0.1s 淡入、停留、上移+淡出后回收。
+>   - 结果页：A 方案应看到暗化遮罩 + 近似毛玻璃面板；B 方案为实时模糊（需材质与脚本）。
+>
+> ## 2025-11-09 - 🐛 [BUGFIX+UX] 释义气泡占位未覆盖 + 文案格式统一
+> - 背景  
+>   - 现象：释义气泡始终显示“WORD · 中文释义”，未替换为真实“AGE·年龄/ DESK·桌面”。  
+> - 根因  
+>   - `DefinitionHintView.ensureBindings()` 仅查找名为 `Text` 的子节点获取 `Label`；而 prefab 实际子节点名为 `Label`，导致未绑定到 `Label`，占位字符串未被覆盖。  
+> - 修复  
+>   - `src/cocos/assets/scripts/ui/DefinitionHintView.ts`：增强绑定逻辑，依次尝试 `Text`/`Label` 节点名，最后回退为“任意后代中的第一个 Label”（保证运行时一定拿到 Label）。  
+>   - `src/cocos/assets/scripts/app/StackGameApp.ts`：统一分隔符为中点且不带空格，显示格式由 `WORD · 释义` 改为 `WORD·释义`；无释义时仅显示 `WORD`。  
+> - 验证  
+>   - 消除有效词：气泡应显示“WORD·中文释义”；若无释义仅显示“WORD”。  
+>   - 结果面板：列表展示不受影响，仍正常显示 `WORD  释义  +分数`。  
+> - 影响范围  
+>   - 仅 UI 展示层；不影响验证与计分逻辑。  
+
+> ## 2025-11-09 - 🐛 [BUGFIX+UX] 槽满结算时机修正 + 结果面板置顶 + 释义气泡上移
+> - 背景  
+>   - 槽位满立即弹出结果页，而此时验证/闪烁仍在进行，出现“先结算后又消除”的矛盾。  
+>   - 结果面板有时被中间字母/槽位遮挡；释义气泡位置略低被槽位遮住。  
+> - 修复/优化  
+>   - 结果触发时机：若处于闪烁或有验证在进行，则记录“延迟结束”，待本批验证完成后，若仍然满且不在闪烁再弹结果页。  
+>   - 结果面板层级：打开时将 `ResultPanel` 置于父节点最顶层，避免被遮挡。  
+>   - 释义气泡位置：Y 偏移由 `+48` 提升到 `+72`，避免被槽位挡住。  
+> - 关键文件  
+>   - `src/cocos/assets/scripts/app/StackGameApp.ts`  
+>     - 新增 `validationsInFlight` 与 `pendingEndReason`，在 `validateSuffixes()` 启停计数并在 `finally` 阶段判定是否应结束；`onSlotFull()` 改为延迟结束；`openResultPanel()` 置顶；`showDefinitionHint()` 上移气泡。  
+>   - `src/cocos/assets/scripts/ui/SlotQueue.ts`  
+>     - 在 `addLetter()` 末尾，当“本次添加后”恰好满时立即派发 `slot-full`（配合上述延迟逻辑，避免需要再点一次）。  
+> - 验证  
+>   - 槽位填满但随后有有效词被消除：不弹结果页，游戏继续。  
+>   - 槽位填满且无更多可消除：验证结束后自动弹结果页。  
+>   - 结果面板始终最上层；释义气泡不再被槽位遮挡。  

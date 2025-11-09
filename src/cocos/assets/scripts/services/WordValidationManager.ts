@@ -30,7 +30,13 @@ export class WordValidationManager {
         result: null
     };
     private isInitialized: boolean = false;
-    private debounceTimer: any = null;
+    private onFinishedCallback: ((word: string, result: ValidateResult) => void) | null = null;
+    /**
+     * 将原先的“单一防抖计时器”改为“按单词分组”的计时器
+     * 这样在一次批量后缀校验（如 DARE/ARE/RE...）时，互不干扰，不会相互取消
+     */
+    private timersByWord: Map<string, any> = new Map();
+    private pendingsByWord: Map<string, PendingValidation> = new Map();
     private currentAbort: AbortController | null = null;
 
     /**
@@ -59,25 +65,44 @@ export class WordValidationManager {
      */
     async validateConcurrent(word: string): Promise<ValidateResult> {
         const upperWord = word.toUpperCase();
-        
-        // 取消上一轮未开始/进行中的验证（只保留最新的词）
-        if (this.debounceTimer) {
-            clearTimeout(this.debounceTimer);
-            this.debounceTimer = null;
-        }
 
+        // 记录“最近一次提交的单词”（维持对外API兼容）
         this.pendingValidation = {
             word: upperWord,
             state: 'validating',
             result: null
         };
 
+        // 清理同一个单词的上一计时器（不影响其他单词）
+        const prevTimer = this.timersByWord.get(upperWord);
+        if (prevTimer) {
+            clearTimeout(prevTimer);
+            this.timersByWord.delete(upperWord);
+        }
+
+        // 独立维护每个单词的pending状态
+        this.pendingsByWord.set(upperWord, {
+            word: upperWord,
+            state: 'validating',
+            result: null
+        });
+
         return new Promise<ValidateResult>((resolve) => {
-            this.debounceTimer = setTimeout(async () => {
+            const timer = setTimeout(async () => {
                 try {
                     const result = await this.validator.validate(upperWord);
-                    this.pendingValidation.state = 'completed';
-                    this.pendingValidation.result = result;
+                    // 更新该单词的pending状态
+                    const pending = this.pendingsByWord.get(upperWord);
+                    if (pending) {
+                        pending.state = 'completed';
+                        pending.result = result;
+                        this.pendingsByWord.set(upperWord, pending);
+                    }
+                    if (this.onFinishedCallback) {
+                        try {
+                            this.onFinishedCallback(upperWord, result);
+                        } catch (_) { /* ignore callback errors */ }
+                    }
                     resolve(result);
                 } catch (error) {
                     console.error(`[WordValidationManager] ❌ 验证失败: ${upperWord}`, error);
@@ -87,11 +112,25 @@ export class WordValidationManager {
                         latency: 0,
                         error: error instanceof Error ? error.message : 'UNKNOWN_ERROR'
                     };
-                    this.pendingValidation.state = 'timeout';
-                    this.pendingValidation.result = errorResult;
+                    const pending = this.pendingsByWord.get(upperWord);
+                    if (pending) {
+                        pending.state = 'timeout';
+                        pending.result = errorResult;
+                        this.pendingsByWord.set(upperWord, pending);
+                    }
+                    if (this.onFinishedCallback) {
+                        try {
+                            this.onFinishedCallback(upperWord, errorResult);
+                        } catch (_) { /* ignore callback errors */ }
+                    }
                     resolve(errorResult);
+                } finally {
+                    // 清理该单词的计时器
+                    this.timersByWord.delete(upperWord);
                 }
-            }, 150); // 轻量防抖：150ms
+            }, 150); // 轻量防抖：150ms（仅对相同单词生效）
+
+            this.timersByWord.set(upperWord, timer);
         });
     }
 
@@ -120,6 +159,12 @@ export class WordValidationManager {
      * 清除待验证状态
      */
     clearPendingValidation(): void {
+        // 清理所有计时器与pending
+        this.timersByWord.forEach((t) => clearTimeout(t));
+        this.timersByWord.clear();
+        this.pendingsByWord.clear();
+
+        // 保持对外字段为初始状态
         this.pendingValidation = {
             word: '',
             state: 'validating',
@@ -132,5 +177,12 @@ export class WordValidationManager {
      */
     isReady(): boolean {
         return this.isInitialized && this.validator.isInitialized();
+    }
+
+    /**
+     * 订阅验证完成事件
+     */
+    setOnValidationFinished(cb: (word: string, result: ValidateResult) => void): void {
+        this.onFinishedCallback = cb;
     }
 }
