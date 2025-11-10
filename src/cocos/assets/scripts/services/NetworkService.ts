@@ -18,6 +18,12 @@
  */
 
 import { sys } from 'cc';
+import {
+    DEFINITION_MAX_LEN,
+    PERSIST_TTL_VALID_DAYS,
+    PERSIST_TTL_INVALID_DAYS,
+    PERSIST_BATCH_THRESHOLD
+} from '../config/word-validate';
 // WeChat Mini Game global (type hint only; no runtime impact)
 declare const wx: any;
 
@@ -69,12 +75,48 @@ export class NetworkService {
     private static readonly DEFAULT_TIMEOUT = 5000; // 5秒，提高容错
     private static readonly MAX_RETRIES = 1; // 最多重试 1 次
     private static readonly WORD_CACHE_TTL_MS = 60 * 60 * 1000; // 1小时
+    // L2（localStorage）持久化缓存
+    private static readonly STORE_KEY = 'wgame_wc_v1';
+    private static readonly L2_TTL_VALID_MS = PERSIST_TTL_VALID_DAYS * 24 * 60 * 60 * 1000;
+    private static readonly L2_TTL_INVALID_MS = PERSIST_TTL_INVALID_DAYS * 24 * 60 * 60 * 1000;
 
     // 会话内结果缓存（避免重复相同单词验证）
     private static wordCache: Map<string, { value: { valid: boolean; definition?: string; source: 'cache' | 'gemini' }, expireAt: number }> = new Map();
     // 单飞：相同单词的并发请求共用同一个Promise
     private static inflight: Map<string, Promise<{ request_id?: string; valid: boolean; definition?: string; source?: string; word?: string; latency_ms?: number; checked_at?: string; error_code?: number; message?: string }>> = new Map();
 
+    // ========== L2 本地持久化结构 ==========
+    private static l2Dict: Record<string, { v: boolean; d?: string; t: number; e: number }> = NetworkService.loadL2();
+    private static l2DirtyCount = 0;
+
+    private static loadL2(): Record<string, { v: boolean; d?: string; t: number; e: number }> {
+        try {
+            const raw = sys.localStorage.getItem(NetworkService.STORE_KEY);
+            if (!raw) return {};
+            const obj = JSON.parse(raw);
+            if (obj && typeof obj === 'object') return obj;
+            return {};
+        } catch {
+            return {};
+        }
+    }
+
+    private static flushL2IfNeeded(force = false): void {
+        if (!force && NetworkService.l2DirtyCount < PERSIST_BATCH_THRESHOLD) return;
+        try {
+            sys.localStorage.setItem(NetworkService.STORE_KEY, JSON.stringify(NetworkService.l2Dict));
+            NetworkService.l2DirtyCount = 0;
+        } catch {
+            // 忽略 localStorage 写入异常，退化为仅 L1
+        }
+    }
+
+    private static ensureChinese(def?: string): string {
+        if (!def) return '';
+        // 去除英文字母，仅保留中文/标点；再截断至 DEFINITION_MAX_LEN
+        const onlyCn = def.replace(/[A-Za-z]/g, '').slice(0, DEFINITION_MAX_LEN).trim();
+        return onlyCn;
+    }
     /**
      * POST 请求（统一走 Cloudflare Worker，明文 JSON；Worker 加密后转发后端）
      */
@@ -349,7 +391,22 @@ export class NetworkService {
                     };
                 }
 
-                // 2) 单飞：相同单词并发复用
+                // 2) L2 本地持久化缓存（localStorage）命中
+                const nowTs = Date.now();
+                const e = NetworkService.l2Dict[upper];
+                if (e && e.e > nowTs) {
+                    const defFromL2 = NetworkService.ensureChinese(e.d || '');
+                    // 回写到 L1，会话期 1h
+                    NetworkService.wordCache.set(upper, {
+                        value: { valid: !!e.v, definition: defFromL2, source: 'cache' },
+                        expireAt: nowTs + NetworkService.WORD_CACHE_TTL_MS
+                    });
+                    const duration2 = Date.now() - t0;
+                    console.log(`[NetworkService] 验证 ${upper} → valid=${!!e.v} source=cache id=persist-cache 耗时=${duration2}ms`);
+                    return { valid: !!e.v, definition: defFromL2, source: 'cache' };
+                }
+
+                // 3) 单飞：相同单词并发复用
                 let inflight = NetworkService.inflight.get(upper);
                 if (!inflight) {
                     inflight = NetworkService.callGeminiValidate(upper);
@@ -362,31 +419,38 @@ export class NetworkService {
             // ✅ 修复：优先使用响应中的 source（区分 cache/gemini），并做严格收窄
             const resolvedSource = (response && response.source === 'cache') ? 'cache' : 'gemini' as 'cache' | 'gemini';
             const isValid = !!(response && response.valid);
-            const definition = response && response.definition ? response.definition : '无';
-                console.log(`[NetworkService] 验证 ${upper} → valid=${isValid} definition=${definition} source=${resolvedSource} 耗时=${duration}ms`);
+            const normalizedDef = NetworkService.ensureChinese(response && response.definition ? response.definition : '');
+                console.log(`[NetworkService] 验证 ${upper} → valid=${isValid} definition=${(normalizedDef || '无')} source=${resolvedSource} 耗时=${duration}ms`);
 
                 // 写入会话缓存
                 NetworkService.wordCache.set(upper, {
                     value: {
                         valid: !!response.valid,
-                        definition: response.definition,
+                        definition: normalizedDef,
                         source: resolvedSource
                     },
                     expireAt: Date.now() + NetworkService.WORD_CACHE_TTL_MS
                 });
 
-            if (isValid) {
-                return {
-                    valid: true,
-                    definition: response.definition,
-                    source: resolvedSource
-                };
-            } else {
-                return {
-                    valid: false,
-                    source: resolvedSource
-                };
-            }
+                // 写入 L2（正/负缓存）
+                const ttl = isValid ? NetworkService.L2_TTL_VALID_MS : NetworkService.L2_TTL_INVALID_MS;
+                const now2 = Date.now();
+                NetworkService.l2Dict[upper] = { v: isValid, d: normalizedDef, t: now2, e: now2 + ttl };
+                NetworkService.l2DirtyCount++;
+                NetworkService.flushL2IfNeeded(false);
+
+                if (isValid) {
+                    return {
+                        valid: true,
+                        definition: normalizedDef,
+                        source: resolvedSource
+                    };
+                } else {
+                    return {
+                        valid: false,
+                        source: resolvedSource
+                    };
+                }
         } catch (error) {
             const duration = Date.now() - t0;
             console.error(`[NetworkService] ❌ 单词验证错误: ${word} (耗时=${duration}ms)`, error);

@@ -330,3 +330,15 @@
 >   - 槽位填满但随后有有效词被消除：不弹结果页，游戏继续。  
 >   - 槽位填满且无更多可消除：验证结束后自动弹结果页。  
 >   - 结果面板始终最上层；释义气泡不再被槽位遮挡。  
+
+> ## 2025-11-10 - ✅ [COMPLETE] extended 释义 100% 覆盖 + 🧠 终极客户端缓存方案
+- 词库  
+  - `src/cocos/assets/bundle/words/zh_gloss_extended.json`：已完成构建，统计显示 100% 覆盖（含中文释义与校验）。  
+  - 后续如发现个别长尾质量问题，将按 `tools/words/validate_gloss.py` 报告逐步修订。  
+- 文档  
+  - 新增：`docs/design/dev/012-终极客户端缓存优化方案-单词验证.md`  
+    - L1 会话缓存（1h）+ L2 持久化缓存（valid=7d / invalid=3d），正/负缓存并存；definition 规范化为“简体中文 ≤ 25 字”。  
+    - Web：`cc.sys.localStorage` 单键大对象 + 批量落盘；原生：可选 JSONL 逐行落盘 + 旋转压缩；读写透传 L1，SingleFlight 去重。  
+    - 容量/LRU/过期与回滚策略、指标与验收用例一并提供，可零后端直接落地。  
+- 预期收益  
+  - 热词 0~1ms（L1），冷启动 5ms 级（L2），网络外呼显著减少；valid=false 负缓存有效抑制重复外呼。
