@@ -342,3 +342,19 @@
     - 容量/LRU/过期与回滚策略、指标与验收用例一并提供，可零后端直接落地。  
 - 预期收益  
   - 热词 0~1ms（L1），冷启动 5ms 级（L2），网络外呼显著减少；valid=false 负缓存有效抑制重复外呼。
+
+## 2025-11-10 - 🐛 [BUGFIX+UX] 叠叠乐：牌源耗尽也自动结算（槽未满同样结束）
+- 背景  
+  - 现象：当槽位未满，但所有字母卡片已被点击并落入槽位时，游戏不会结束，无法看到结果统计。  
+- 修复/实现  
+  - 在 `onLetterAdded` 中检测“牌源耗尽”（`stackBoard.getRemainingCount() === 0`）：  
+    - 若当前无闪烁且无在途验证，立即 `endGame('牌源耗尽')`；  
+    - 若存在闪烁或验证在进行，记录 `pendingEndReason='NO_TILES'`，待验证收敛后自动结束。  
+  - 扩展延迟结束机制：`validateSuffixes().finally` 在 `validationsInFlight === 0` 时，分别处理  
+    - `SLOTS_FILLED`：仍满且不在闪烁 → 结束（保持原行为）  
+    - `NO_TILES`：仍无剩余卡且不在闪烁 → 结束（新行为）  
+  - 避免误清延迟标记：`removeWord()` 仅在 `pendingEndReason==='SLOTS_FILLED' && !isFull` 时清空，保留 `NO_TILES` 场景判断。  
+- 影响  
+  - 玩家在把所有字母点击到底部槽位后，即使未触发“槽满”也能正常结算与查看统计。  
+- 文件  
+  - `src/cocos/assets/scripts/app/StackGameApp.ts`

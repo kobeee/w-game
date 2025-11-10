@@ -477,11 +477,17 @@ export class StackGameApp extends Component {
         }).finally(() => {
             // 本批次结束
             this.validationsInFlight = Math.max(0, this.validationsInFlight - 1);
-            // 如果此前因为槽满而延迟结束，现在检查是否可以结束
+            // 如果此前记录了延迟结束原因（槽满或牌源耗尽），在验证结束后检查是否可以结束
             if (this.pendingEndReason && this.validationsInFlight === 0) {
-                // 仍然槽满且没有正在闪烁时才结束
-                if (this.slotQueue.isFull() && this.gameState !== GameState.BLINKING && this.gameState !== GameState.ENDED) {
-                    this.endGame('牌槽已满');
+                const canEndNow = (this.gameState !== GameState.BLINKING && this.gameState !== GameState.ENDED);
+                if (this.pendingEndReason === 'SLOTS_FILLED') {
+                    if (this.slotQueue.isFull() && canEndNow) {
+                        this.endGame('牌槽已满');
+                    }
+                } else if (this.pendingEndReason === 'NO_TILES') {
+                    if (this.stackBoard.getRemainingCount() === 0 && canEndNow) {
+                        this.endGame('牌源耗尽');
+                    }
                 }
                 this.pendingEndReason = null;
             }
@@ -526,6 +532,17 @@ export class StackGameApp extends Component {
 
             // 触发闪烁动画
             this.slotQueue.startBlink(match);
+        }
+
+        // ✅ 新增：当牌源耗尽（所有字母卡都已点击进入槽位）时，也需要结束游戏（即便槽未满）
+        const remaining = this.stackBoard.getRemainingCount();
+        if (remaining === 0) {
+            // 若当前存在闪烁或网络验证在进行，则记录延迟结束原因，待验证结束/闪烁结束后再结算
+            if (this.gameState === GameState.BLINKING || this.validationsInFlight > 0 || this.currentMatch) {
+                this.pendingEndReason = 'NO_TILES';
+            } else {
+                this.endGame('牌源耗尽');
+            }
         }
     }
 
@@ -631,8 +648,8 @@ export class StackGameApp extends Component {
 
         // 检查游戏是否结束
         this.checkGameEnd();
-        // 如果曾记录“等待结束”，但现在已不满，清空该标记
-        if (this.pendingEndReason && !this.slotQueue.isFull()) {
+        // 如果曾记录“槽满等待结束”，但现在已不满，清空该标记（不影响 NO_TILES 判定）
+        if (this.pendingEndReason === 'SLOTS_FILLED' && !this.slotQueue.isFull()) {
             this.pendingEndReason = null;
         }
     }

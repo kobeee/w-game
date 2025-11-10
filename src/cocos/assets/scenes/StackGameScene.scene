@@ -2121,9 +2121,9 @@
     "_dstBlendFactor": 4,
     "_color": {
       "__type__": "cc.Color",
-      "r": 231,
-      "g": 76,
-      "b": 60,
+      "r": 209,
+      "g": 4,
+      "b": 4,
       "a": 255
     },
     "_spriteFrame": {
@@ -2160,9 +2160,9 @@
     "_transition": 1,
     "_normalColor": {
       "__type__": "cc.Color",
-      "r": 231,
-      "g": 76,
-      "b": 60,
+      "r": 209,
+      "g": 4,
+      "b": 4,
       "a": 255
     },
     "_hoverColor": {
