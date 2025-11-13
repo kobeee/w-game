@@ -53,6 +53,11 @@ export class DefinitionHintView extends Component {
             .start();
     }
 
+    public updateText(text: string): void {
+        this.ensureBindings();
+        if (this.textLabel) this.textLabel.string = text || '';
+    }
+
     public dismiss(onComplete?: () => void): void {
         const opacity = this.node.getComponent(UIOpacity) || this.node.addComponent(UIOpacity);
         const startPos = this.node.getPosition();

@@ -234,7 +234,7 @@ async def call_gemini_api(word: str) -> dict:
     """
     prompt = (
         f"判断\"{word}\"是否是有效的英语单词（包括俚语、专有名词）。\n"
-        f"如果是，用20字以内的中文解释其含义。\n"
+        f"如果是，用10字以内的中文解释其含义。\n"
         f"仅返回JSON: {{\"valid\": true/false, \"definition\": \"释义\"}}"
     )
 

@@ -115,6 +115,16 @@ export class GlossService {
                 } else {
                     console.error('[GlossService] ❌ 核心词义库加载失败');
                 }
+
+                // 额外加载：超集与自定义词义库（幂等合并）
+                const supersetGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_superset', true);
+                if (supersetGlossAsset && (supersetGlossAsset as any).json) {
+                    this.mergeGlossDict((supersetGlossAsset as any).json);
+                }
+                const customGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_custom', true);
+                if (customGlossAsset && (customGlossAsset as any).json) {
+                    this.mergeGlossDict((customGlossAsset as any).json);
+                }
             } else {
                 
             }
@@ -185,7 +195,30 @@ export class GlossService {
      */
     explain(word: string): string | null {
         const upperWord = word.toUpperCase();
-        return this.glossDict.get(upperWord) || null;
+        const local = this.glossDict.get(upperWord);
+        if (local && typeof local === 'string' && local.trim().length > 0) {
+            console.info('[GlossService][local]', { word: upperWord, zh: local });
+            return local;
+        }
+        // 回退：从 L2 持久化缓存读取（与 WordCache/NetworkService 保存一致）
+        try {
+            const raw = sys.localStorage.getItem('wgame_word_cache_v2');
+            if (raw) {
+                const obj = JSON.parse(raw);
+                const e = obj && obj[upperWord];
+                if (e && typeof e === 'object') {
+                    // e: { v: boolean, de?: string, dz?: string, t: number, e: number }
+                    if (e.dz && typeof e.dz === 'string' && e.e > Date.now()) {
+                        console.info('[GlossService][l2-hit]', { word: upperWord, zh: e.dz });
+                        return e.dz as string;
+                    }
+                }
+            }
+        } catch {
+            // ignore
+        }
+        console.info('[GlossService][miss]', { word: upperWord });
+        return null;
     }
 
     /**
@@ -299,7 +332,7 @@ export class GlossService {
      * @param assetPath 资源路径
      * @returns Promise<JsonAsset | null>
      */
-    private async loadJsonFromBundle(bundleName: string, assetPath: string): Promise<JsonAsset | null> {
+    private async loadJsonFromBundle(bundleName: string, assetPath: string, optional: boolean = false): Promise<JsonAsset | null> {
         return new Promise((resolve) => {
 
             // ✅ 步骤1：检查Bundle是否已缓存（使用官方API）
@@ -321,11 +354,21 @@ export class GlossService {
                 // 尝试直接用 bundle.load 加载
                 bundle.load(assetPath, JsonAsset, (err, asset) => {
                     if (err) {
+                        if (optional) {
+                            console.warn(`[GlossService.loadJsonFromBundle] 可选资源缺失或类型不匹配: ${bundleName}/${assetPath}`);
+                            resolve(null);
+                            return;
+                        }
                         console.error(`[GlossService.loadJsonFromBundle] ❌ JsonAsset 加载失败，尝试 Text 格式:`, err);
 
                         // 降级方案：尝试用 Text 类型加载后手动解析
                         bundle.load(assetPath, TextAsset, (textErr, textAsset: TextAsset) => {
                             if (textErr) {
+                                if (optional) {
+                                    console.warn(`[GlossService.loadJsonFromBundle] 可选资源 Text 加载失败: ${bundleName}/${assetPath}`);
+                                    resolve(null);
+                                    return;
+                                }
                                 console.error(`[GlossService.loadJsonFromBundle] ❌ Text 加载也失败:`, textErr);
                                 resolve(null);
                             } else {
@@ -363,8 +406,13 @@ export class GlossService {
                     // ✅ 步骤5：加载资源
                     newBundle.load(assetPath, JsonAsset, (loadErr, asset) => {
                         if (loadErr) {
-                            console.error(`[GlossService.loadJsonFromBundle] ❌ 资源加载失败: ${bundleName}/${assetPath}`, loadErr);
-                            resolve(null);
+                            if (optional) {
+                                console.warn(`[GlossService.loadJsonFromBundle] 可选资源缺失: ${bundleName}/${assetPath}`);
+                                resolve(null);
+                            } else {
+                                console.error(`[GlossService.loadJsonFromBundle] ❌ 资源加载失败: ${bundleName}/${assetPath}`, loadErr);
+                                resolve(null);
+                            }
                         } else {
                             
                             resolve(asset);

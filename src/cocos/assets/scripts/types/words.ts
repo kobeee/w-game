@@ -1,8 +1,10 @@
 export interface ValidateResult {
+    word: string;
     valid: boolean;
-    definition?: string;
-    source: 'local' | 'cache' | 'gemini' | 'offline';
-    latency: number;
+    definitionEn?: string;
+    definitionZh?: string;
+    source: 'local' | 'dict' | 'wiktionary' | 'gemini' | 'cache' | 'offline';
+    latency?: number;
     error?: string;
 }
 
@@ -22,6 +24,8 @@ export interface GameResult {
     wordsCleared: WordStat[];
     longestWordLen: number;
 }
+
+
 
 
 

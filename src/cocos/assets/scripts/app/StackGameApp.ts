@@ -151,6 +151,9 @@ export class StackGameApp extends Component {
             this.slotQueue.node.on('word-removed', this.onWordRemoved, this);
         }
 
+        // 监听中文释义异步到达事件，实时更新当前气泡
+        // 维基异步补齐已移除，不再订阅中文释义更新事件
+
         // 隐藏结果面板
         if (this.resultPanel) {
             this.resultPanel.active = false;
@@ -474,7 +477,9 @@ export class StackGameApp extends Component {
                 this.gameState = GameState.BLINKING;
                 this.slotQueue.startBlink(networkMatch);
             }
-        }).finally(() => {
+        })
+        .catch(() => null)
+        .then(() => {
             // 本批次结束
             this.validationsInFlight = Math.max(0, this.validationsInFlight - 1);
             // 如果此前记录了延迟结束原因（槽满或牌源耗尽），在验证结束后检查是否可以结束
@@ -597,9 +602,8 @@ export class StackGameApp extends Component {
             });
             this.longestWordLen = Math.max(this.longestWordLen, match.word.length);
 
-			// 展示释义气泡（定位到匹配区中心）
+            // 展示释义气泡（定位到匹配区中心）
 			const centerIdx = Math.floor((match.startIdx + match.endIdx) / 2);
-			// @ts-expect-error: 运行时存在该方法
 			const centerPos = (this.slotQueue as any).getSlotWorldPosition
 				? (this.slotQueue as any).getSlotWorldPosition(centerIdx)
 				: null;
@@ -617,9 +621,8 @@ export class StackGameApp extends Component {
             });
             this.longestWordLen = Math.max(this.longestWordLen, match.word.length);
 
-			// 即使无本地释义也展示占位提示
+            // 即使无本地释义也展示占位提示
 			const centerIdx = Math.floor((match.startIdx + match.endIdx) / 2);
-			// @ts-expect-error: 运行时存在该方法
 			const centerPos = (this.slotQueue as any).getSlotWorldPosition
 				? (this.slotQueue as any).getSlotWorldPosition(centerIdx)
 				: null;
@@ -759,7 +762,8 @@ export class StackGameApp extends Component {
 
         // 分数（仅结果面板）
         if (this.resultScoreLabel) {
-            this.resultScoreLabel.string = `得分：${result.score.toString().padStart(4, '0')}`;
+            const scoreStr = ('0000' + result.score.toString()).slice(-4);
+            this.resultScoreLabel.string = `得分：${scoreStr}`;
         }
         // 用时
         if (this.timeLabel) {
@@ -808,9 +812,14 @@ export class StackGameApp extends Component {
 
     private formatDuration(durationMs: number): string {
         const totalSec = Math.floor(durationMs / 1000);
-        const mm = Math.floor(totalSec / 60).toString().padStart(2, '0');
-        const ss = (totalSec % 60).toString().padStart(2, '0');
+        const mm = this.pad2(Math.floor(totalSec / 60));
+        const ss = this.pad2(totalSec % 60);
         return `${mm}:${ss}`;
+    }
+
+    private pad2(n: number): string {
+        const s = '0' + n.toString();
+        return s.slice(-2);
     }
 
     /**
@@ -852,6 +861,9 @@ export class StackGameApp extends Component {
     /**
      * 展示释义气泡（由上层在拿到 worldPos 后调用）
      */
+    // 运行期跟踪：当前正在显示气泡的单词 → 视图
+    private activeHintsByWord: Map<string, DefinitionHintView> = new Map();
+
     public showDefinitionHint(word: string, definition: string, worldPos: Vec3): void {
         if (!this.hintPool || !this.definitionHintsRoot) return;
         const uiTrans = this.definitionHintsRoot.getComponent(UITransform);
@@ -864,13 +876,25 @@ export class StackGameApp extends Component {
         const cleanDef = (definition || '').trim();
         const text = cleanDef.length > 0
             ? `${word.toUpperCase()}·${cleanDef}`
-            : `${word.toUpperCase()}`;
+            : `${word.toUpperCase()}·暂无释义`;
         view.show(text);
+        // 记录活跃气泡（后续如需扩展异步更新，可利用此映射）
+        const key = word.toUpperCase();
+        this.activeHintsByWord.set(key, view);
         // 停留后开始退场，并在退场完成时回收
         setTimeout(() => {
-            view.dismiss(() => this.hintPool && this.hintPool.release(node));
+            view.dismiss(() => {
+                // 回收前移除映射
+                const cur = this.activeHintsByWord.get(key);
+                if (cur === view) {
+                    this.activeHintsByWord.delete(key);
+                }
+                this.hintPool && this.hintPool.release(node);
+            });
         }, HINT_STAY_MS);
     }
+
+    // 已移除 Wiktionary 异步补齐相关代码
 
     /**
      * 加载远程Asset Bundle资源（从PreloadManager预加载的缓存获取）
@@ -913,6 +937,8 @@ export class StackGameApp extends Component {
             this.slotQueue.node.off('slot-full', this.onSlotFull, this);
             this.slotQueue.node.off('word-removed', this.onWordRemoved, this);
         }
+
+        // 无需取消已移除的事件监听
 
         // 清理验证状态
         this.validationManager.clearPendingValidation();

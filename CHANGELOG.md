@@ -358,3 +358,74 @@
   - 玩家在把所有字母点击到底部槽位后，即使未触发“槽满”也能正常结算与查看统计。  
 - 文件  
   - `src/cocos/assets/scripts/app/StackGameApp.ts`
+
+## 2025-11-10 - ✨ [DESIGN] 快速否定层 + dictionaryapi.dev + Wiktionary 方案（Gemini 可切换兜底）
+- 文档：`docs/design/dev/013-快速否定层+dictionaryapi+Wiktionary-验证与中文释义-终极可落地方案.md`
+- 决策：
+  - 保留“最长后缀 串行短路 + 200–250ms 合并窗口 + 在途取消”（必要，用于抑制瞬时并发并保证“以最新输入为准”）。
+  - 远端阶段顺序：L0 本地词库+词形归一 → L1 布隆快速否定 → L2 `dictionaryapi.dev` 有效性 → L3 Wiktionary 中文（600ms 超时、异步补齐） → L4 Gemini 兜底（`GEMINI_FALLBACK_ENABLED=false`，每日≤10/客户端、并发=1、指数退避）。
+- 缓存：会话 L1 + 持久化 L2（valid=7d / invalid=3d，写透，键统一大写）；异常/429/5xx 不落盘。
+- 规范：中文释义“短词化（强制）”——仅 1–3 个中文短译词，使用“、”连接，总长 ≤ 25 字；入库前统一规范化与裁剪；解析失败不落盘，缓存只存规范化后的结果。
+- 预期性能：
+  - 明显无效词（L1 否定）：< 1ms
+  - 404（dictionaryapi.dev 判无效）：150–300ms
+  - 有效且需中文：400–900ms（有效性先至，中文异步）
+  - 二次命中（L1/L2）：< 1–10ms
+- 实施清单：新增配置常量与类型；离线构建布隆并前端加载；词形归一；接入 dictionaryapi.dev/Wiktionary；Gemini 开关与预算；埋点与验收用例。
+
+## 2025-11-11 - ✅ [COMPLETE] 013 方案落地（本地+快速否定+字典+维基+兜底）
+- 新增/扩展配置：`src/cocos/assets/scripts/config/word-validate.ts`
+  - 合并窗口、并发/队列、令牌桶、字典/维基超时、GEMINI 开关与预算、缓存 TTL、Bloom 路径/参数
+- 类型统一：`src/cocos/assets/scripts/types/words.ts` 扩展 `ValidateResult`
+  - 字段：`word|valid|definitionEn|definitionZh|source|latency|error`
+  - 来源枚举：`local|dict|wiktionary|gemini|cache|offline`
+- 本地归一：`services/Lemmatizer.ts` + `services/LocalLookup.ts`
+- 快速否定：`services/FastNegative.ts`（轻规则 + Bloom 占位加载）
+- 远端阶段：`services/RemoteDictionary.ts`（dictionaryapi.dev 有效性 + Wiktionary 中文，600ms 超时，中文短词化规范）
+- 写透缓存：`services/WordCache.ts`（L1 会话 + L2 localStorage，valid=7d/invalid=3d）
+- 速率限制：`services/RateLimiter.ts`（令牌桶）
+- 兜底：`NewWordValidator` 内接入 `NetworkService.validateWord`（默认 `GEMINI_FALLBACK_ENABLED=false`）
+- 编排器：`services/NewWordValidator.ts`（完整管线），`services/HybridWordValidator.ts` 切换到新管线
+- 合并窗口+在途取消：`services/WordValidationManager.ts` 使用 `REMOTE_MERGE_WINDOW_MS` 与 `AbortController`
+- Bloom 构建脚本：`tools/words/build_bloom.py`（k=7 示例，可按词表生成 `english.bloom`）
+- 影响面：保持对外 API 不变；UI 与结果统计无破坏性变更
+
+## 2025-11-13 - ✅ [FINAL] 中文释义改为本地离线映射，移除 Wiktionary
+- 决策：
+  - 彻底移除 Wiktionary 实时请求与前端兜底脚本注入，避免编辑器/预览环境下的 fetch/XHR 假死和 CORS/代理不确定性。
+  - 中文释义统一改为“离线本地映射”（远程 bundle 预加载）：优先 `zh_gloss.json`，并合并 `zh_gloss_extended.json`。
+  - 有效性验证保留 dictionaryapi.dev；中文释义若缺失则显示“暂无释义”。
+- 客户端：
+  - `services/RemoteDictionary.ts`：移除 Wiktionary 相关实现与导入，保留 `fetchWiktionaryZh` 空实现以兼容旧调用（返回 null）。
+  - `services/NewWordValidator.ts`：删除所有 Wiktionary 异步补齐逻辑与事件发送，保持本地→快速否定→dictionaryapi.dev→（可选）Gemini 的主流程。
+  - `app/StackGameApp.ts`：移除 `word.zh.updated` 订阅与 `ensureZhAfterShow`；释义气泡无中文时显示“WORD·暂无释义”。
+  - `config/word-validate.ts`：此前将 `WIKI_TIMEOUT_MS` 恢复至 1200ms，但现已不再使用该通道，不影响运行。
+- 资源（@words）：
+  - 新增 `src/cocos/assets/bundle/words/zh_gloss_superset.json`（覆盖更多常用短词），并补充 `ANT/BAY` 到现有词表。
+- 客户端加载顺序：
+  - `zh_gloss` → `zh_gloss_superset`（可选）→ `zh_gloss_custom`（可选，覆盖修正）→ `zh_gloss_extended`。
+- 边缘：
+  - `tools/cloudflare/worker.js`：移除 `/wiktionary/zh` 路由（包含 JSONP 逻辑），回退为精简代理，仅保留与项目相关的其它路由。
+- 预期效果：
+  - 中文释义命中路径 0ms 级（本地命中）；网络调用仅用于有效性判断；稳定性显著提升。
+  - UI 无阻塞且几乎不出现超时；极少数未覆盖词条展示“暂无释义”。
+
+## 2025-11-13 - ✨ [FEATURE] 启用 Gemini 中文释义兜底（简短释义）
+- 配置：
+  - `config/word-validate.ts`：`GEMINI_FALLBACK_ENABLED=true`。
+- 客户端：
+  - `services/NewWordValidator.ts`：当本地/字典命中但无中文时，同步调用 `NetworkService.validateWord` 获取中文释义；成功则回写缓存并带回到结果；失败保持“暂无释义”不阻塞 UI。
+  - `services/NetworkService.ts`：更新 `/gemini/generate` 提示词为“已确认是有效单词，仅返回 JSON，中文释义≤20字、避免赘述”，继续使用结构化输出（response_mime_type + response_schema）与容错解析；保留会话/L2 缓存写入。
+- 边缘：
+  - `tools/cloudflare/worker.js`：继续使用既有 `/gemini/generate` 直连代理，无需变更。
+- 预期：
+  - 明显降低“无释义”情况；失败仍显示“暂无释义”，整体交互无阻塞。
+
+## 2025-11-13 - 🧹 [CLEANUP] 可选词义库加载与日志降噪
+- 客户端（`src/cocos/assets/scripts/data/GlossService.ts`）
+  - 将 `zh_gloss_superset.json` / `zh_gloss_custom.json` 作为“可选资源”加载，缺失时仅 `warn`，不再抛出错误日志；其余核心资源保持原有错误输出。
+  - 新增 `loadJsonFromBundle(bundle, path, optional=false)` 第三参数；在可选场景抑制“Bundle doesn't contain ...”报错。
+- 客户端（`src/cocos/assets/scripts/services/NewWordValidator.ts`）
+  - 清理临时调试日志：移除 `[WordValidator][start|local|fast-negative|dict-status]`，仅保留 Gemini 相关关键日志。
+- 影响
+  - 功能无改动；控制台噪音明显降低；缺失自定义词义库不再干扰运行。

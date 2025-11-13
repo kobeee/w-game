@@ -78,22 +78,39 @@ export class LocalDictionary {
                     return;
                 }
 
-                bundle.load('zh_gloss', JsonAsset, (loadErr, asset) => {
-                    if (loadErr) {
-                        console.warn('[LocalDictionary] 核心词库释义加载失败');
-                        resolve();
-                        return;
-                    }
-
+                const mergeJson = (asset?: JsonAsset | null) => {
                     if (asset && asset.json) {
                         for (const [word, definition] of Object.entries(asset.json)) {
                             if (typeof definition === 'string') {
-                                this.coreDict.set(word.toUpperCase(), definition);
+                                this.coreDict.set(String(word).toUpperCase(), definition);
                             }
                         }
                     }
+                };
 
-                    resolve();
+                // 基础核心
+                bundle.load('zh_gloss', JsonAsset, (loadErr, asset) => {
+                    if (loadErr) {
+                        console.warn('[LocalDictionary] 核心词库释义加载失败');
+                    } else {
+                        mergeJson(asset);
+                    }
+
+                    // 可选：superset（更大覆盖）
+                    bundle.load('zh_gloss_superset', JsonAsset, (supErr, supAsset) => {
+                        if (!supErr) {
+                            mergeJson(supAsset);
+                        }
+
+                        // 可选：custom（项目自定义覆盖/修正）
+                        bundle.load('zh_gloss_custom', JsonAsset, (cusErr, cusAsset) => {
+                            if (!cusErr) {
+                                mergeJson(cusAsset);
+                            }
+                            resolve();
+                        });
+                    });
+
                 });
             });
         });

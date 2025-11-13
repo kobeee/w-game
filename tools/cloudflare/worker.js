@@ -144,6 +144,8 @@ async function proxyGeneric(request, upstreamUrlString, upstreamHost) {
   return newResponse;
 }
 
+// 维基中文释义路由已下线（改为离线本地映射方案）
+
 function sanitizeResponseHeaders(respHeaders) {
   respHeaders.delete('Content-Encoding');
   respHeaders.delete('Transfer-Encoding');

@@ -11,7 +11,9 @@
  */
 
 import { _decorator } from 'cc';
-import { HybridWordValidator, ValidateResult } from './HybridWordValidator';
+import { HybridWordValidator } from './HybridWordValidator';
+import { ValidateResult } from '../types/words';
+import { REMOTE_MERGE_WINDOW_MS } from '../config/word-validate';
 
 const { ccclass } = _decorator;
 
@@ -90,7 +92,12 @@ export class WordValidationManager {
         return new Promise<ValidateResult>((resolve) => {
             const timer = setTimeout(async () => {
                 try {
-                    const result = await this.validator.validate(upperWord);
+                    // 在途取消：开始新一轮前取消旧请求
+                    if (this.currentAbort) {
+                        try { this.currentAbort.abort(); } catch { /* ignore */ }
+                    }
+                    this.currentAbort = new AbortController();
+                    const result = await this.validator.validate(upperWord, this.currentAbort.signal);
                     // 更新该单词的pending状态
                     const pending = this.pendingsByWord.get(upperWord);
                     if (pending) {
@@ -107,6 +114,7 @@ export class WordValidationManager {
                 } catch (error) {
                     console.error(`[WordValidationManager] ❌ 验证失败: ${upperWord}`, error);
                     const errorResult: ValidateResult = {
+                        word: upperWord,
                         valid: false,
                         source: 'offline',
                         latency: 0,
@@ -128,7 +136,7 @@ export class WordValidationManager {
                     // 清理该单词的计时器
                     this.timersByWord.delete(upperWord);
                 }
-            }, 150); // 轻量防抖：150ms（仅对相同单词生效）
+            }, REMOTE_MERGE_WINDOW_MS); // 远端合并窗口（仅对相同单词生效）
 
             this.timersByWord.set(upperWord, timer);
         });

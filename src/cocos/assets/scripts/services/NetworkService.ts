@@ -463,13 +463,13 @@ export class NetworkService {
      */
     private static async callGeminiValidate(wordUpper: string): Promise<{ valid: boolean; definition?: string }> {
         const endpoint = `${NetworkService.GENERATE_PATH}`;
-        const prompt = `你是词典校验助手。请仅返回 JSON。
-任务：判断输入是否为有效的英语单词（包含俚语、专有名词）。
-若有效，请用简体中文在 20 字以内给出简明释义；若无效，释义用空字符串。
-输入："${wordUpper}"
+        const prompt = `你是词典助手。请仅返回 JSON。
+输入保证是有效英文单词，无需再次判断有效性。
+请用简体中文在 10 字以内给出该词的简明释义，避免赘述与例句。
 输出 JSON 严格符合：
-{"valid": true/false, "definition": "中文释义或空字符串"}
-不得输出除 JSON 外的任何字符（禁止 Markdown、代码块、解释说明）。`;
+{"valid": true, "definition": "中文释义（≤10字）"}
+不得输出除 JSON 外的任何字符（禁止 Markdown、代码块、解释说明）。
+输入："${wordUpper}"`;
 
         const body = {
             contents: [{ parts: [{ text: prompt }] }],
@@ -490,10 +490,13 @@ export class NetworkService {
         };
 
         type GeminiResp = any;
+        console.info('[Gemini][send]', { word: wordUpper });
         const resp = await NetworkService.post<GeminiResp>(endpoint, body, NetworkService.DEFAULT_TIMEOUT);
         // 解析 Gemini 返回（candidates[0].content.parts[0].text 可能是 JSON 字符串）
         const text = NetworkService.extractTextFromGemini(resp);
+        console.info('[Gemini][recv]', { word: wordUpper, textLen: (text && text.length) || 0 });
         const parsed = NetworkService.tryParseJson(text);
+        console.info('[Gemini][parse]', { word: wordUpper, ok: !!(parsed && typeof parsed.valid === 'boolean') });
         if (parsed && typeof parsed.valid === 'boolean') {
             return { valid: !!parsed.valid, definition: typeof parsed.definition === 'string' ? parsed.definition : '' };
         }
