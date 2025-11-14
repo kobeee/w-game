@@ -429,3 +429,46 @@
   - 清理临时调试日志：移除 `[WordValidator][start|local|fast-negative|dict-status]`，仅保留 Gemini 相关关键日志。
 - 影响
   - 功能无改动；控制台噪音明显降低；缺失自定义词义库不再干扰运行。
+
+## 2025-11-14 - 🐛 [CRITICAL BUGFIX] 叠叠乐布局遮挡判定彻底修复（网格+栈模型落地）
+- 背景  
+  - 叠叠乐堆叠玩法中存在“视觉上仍被部分遮挡但仍可点击”的严重问题，尤其是多层竖向堆叠（如 X/U/G 一列）下，底层牌在上方 U 被移除后会提前变为可点击。  
+  - 之前多次尝试基于纯矩形重叠/象限划分的遮挡算法，在复杂偏移与多层堆叠下仍难以稳定满足“任意遮挡即禁用”的需求。
+- 设计与方案  
+  - 正式采用“**1/4 网格 + 子网格栈**”模型作为最终遮挡判定方案：  
+    - 将卡片 90×90 划分为 4 个 45×45 子网格，每张牌在逻辑网络上占用 4 个子格。  
+    - 全局构建 `cell(x,y) -> [Card...]` 映射，同一子格内按 `layer` 从小到大排序，将其视为一根“牌栈”。  
+    - 对于任意卡片，只要在它覆盖的任一子格中，它不是该子格的栈顶（且未移除），即视为被遮挡（`blocked=true`）；只有当四个子格中它都是栈顶时才可点击。  
+  - 该方案与“屏幕当作大网格、每格携带四分之一卡片、点击=弹栈顶”的直觉模型完全一致，便于后续扩展与验证。
+- 具体实现  
+  - `src/cocos/assets/scripts/core/BlockDetector.ts`  
+    - 移除单纯依赖 pair-wise 矩形重叠的遮挡表，改为基于 `getOccupiedCells()` 的子网格栈算法：  
+      - `getOccupiedCells(card)` 通过 `card.rect` 和 `CELL=45` 计算出 4 个被占用的子格坐标。  
+      - `updateAllBlockStatus(cards)` 中，为每个子格建立 `cellMap: "x,y" -> Card[]`，按 `layer` 排序后将**非栈顶的卡片全部标记为 blocked**。  
+      - 多次演练 X/U/G 多层堆叠场景，确认底层 G 只有在所有上方遮挡卡被移除后才会解除 `blocked` 状态。  
+  - `src/cocos/assets/scripts/ui/StackBoard.ts`  
+    - `updateCardRects()` 不再写死 90×90，而是从字母牌节点的 `UITransform.contentSize` 读取真实宽高，保证逻辑矩形与美术尺寸完全一致，消除“看上去被挡但矩形不重叠”的误判。  
+  - `scripts/debug_block_detector.js`  
+    - 新增独立 Node 调试脚本，使用与 `BlockDetector` 相同的子网格栈算法：  
+      - 内置手工构造的三层叠放场景（G/B/X）用于快速回归“上层移除后下层是否仍被阻挡”。  
+      - 支持从布局 JSON（如 `sheep_style_complex.json`）恢复所有卡片，打印指定 `gridRow/gridCol` 上各层牌的子格占用与 `blocked` 状态，便于静态验证复杂布局。  
+- 布局与设计  
+  - `src/cocos/assets/resources/layouts/sheep_style_complex.json`  
+    - 作为首个“羊了个羊式”复杂布局模板，包含外圈环形、十字花瓣、对角斜线、内圈小环和中心多层堆叠。  
+    - 所有偏移均为 `-45/0/45`，严格对齐 45 像素子网格，确保与遮挡算法的 CELL 一致。  
+- 影响  
+  - 叠叠乐玩法中的“部分遮挡仍可点击”问题在当前布局下已无法复现，尤其是多层竖向堆叠场景（X/U/G 一列）下，底层牌只在所有上方遮挡被清空后才可点击。  
+  - 新增的脚本与布局说明为后续新增/调整布局 JSON 提供了稳定的验证工具和清晰的设计基准。
+
+## 2025-11-14 - ✨ [FEATURE] 叠叠乐多套正式堆叠布局 + 随机关卡/连续性体验
+- 布局
+  - 新增多层堆叠布局 JSON：`stack_center_tower.json`、`stack_cross_towers.json`、`stack_diagonal_ridge.json`、`stack_ring_fortress.json`、`stack_multi_towers.json`，均采用 7×7 网格 + 1/2 卡偏移（45px），大幅减少“只在底层露一片角”的单层卡片，强调高层堆叠与遮挡关系。
+  - `stack_center_tower`：5×5 实心底盘 + 3×3 二层 + 中心塔向上/下偏移，形成明显“中心高塔”解牌节奏。
+  - `stack_cross_towers`：中轴十字 + 四角塔 + 多层偏移堆叠，兼顾横向/纵向/对角遮挡，适合中高难度。
+  - `stack_diagonal_ridge`：双对角山脊 + 纵向脊梁塔，叠层集中在对角与中轴，注重观察层差与点击顺序。
+  - `stack_ring_fortress`：最外圈 + 第二圈近乎全环，内圈 3×3 再起两层偏移“堡垒”，塔心最高可叠到 6 层，整体非常密集。
+  - `stack_multi_towers`：左右双塔 + 中轴塔 + 中心塔，多组塔彼此通过偏移交叉遮挡，高层大量卡片堆在一起，“一眼看不完”的复杂度。
+- 随机规则与连续性
+  - 在 `StackGameApp` 中引入正式布局池 `GRID_LAYOUT_POOL = ['layouts/sheep_style_complex', 'layouts/stack_center_tower', 'layouts/stack_cross_towers', 'layouts/stack_diagonal_ridge', 'layouts/stack_ring_fortress', 'layouts/stack_multi_towers']`，**显式排除** `pyramid_default`，仅作为旧版示例不再参与随机。
+  - 初次从首页进入叠叠乐场景时，自动从布局池中随机选择一套布局作为本局关卡；同一局的 `restartGame()` 与结果页的“再来一局”按钮复用 `lastLayoutPath`，不重新随机，保证玩家有“同一关卡连续尝试”的体验。
+  - 若未来新增布局，只需补充 `GRID_LAYOUT_POOL` 即可参与随机，老版本仍会在布局缺失时回退到 `sheep_style_complex`，兼容性稳定。

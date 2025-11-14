@@ -1,0 +1,90 @@
+{
+    "layoutName": "stack_ring_fortress",
+    "gridSize": {
+        "rows": 7,
+        "cols": 7
+    },
+    "cards": [
+        { "layer": 0, "gridRow": 0, "gridCol": 0, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 0, "gridCol": 1, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 0, "gridCol": 2, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 0, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 0, "gridCol": 4, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 0, "gridCol": 5, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 0, "gridCol": 6, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 0, "gridRow": 6, "gridCol": 0, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 6, "gridCol": 1, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 6, "gridCol": 2, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 6, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 6, "gridCol": 4, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 6, "gridCol": 5, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 6, "gridCol": 6, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 0, "gridRow": 1, "gridCol": 0, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 2, "gridCol": 0, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 3, "gridCol": 0, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 4, "gridCol": 0, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 5, "gridCol": 0, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 0, "gridRow": 1, "gridCol": 6, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 2, "gridCol": 6, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 3, "gridCol": 6, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 4, "gridCol": 6, "offset": { "x": 0, "y": 0 } },
+        { "layer": 0, "gridRow": 5, "gridCol": 6, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 1, "gridRow": 1, "gridCol": 1, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 1, "gridCol": 2, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 1, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 1, "gridCol": 4, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 1, "gridCol": 5, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 1, "gridRow": 5, "gridCol": 1, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 5, "gridCol": 2, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 5, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 5, "gridCol": 4, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 5, "gridCol": 5, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 1, "gridRow": 2, "gridCol": 1, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 3, "gridCol": 1, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 4, "gridCol": 1, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 1, "gridRow": 2, "gridCol": 5, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 3, "gridCol": 5, "offset": { "x": 0, "y": 0 } },
+        { "layer": 1, "gridRow": 4, "gridCol": 5, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 2, "gridRow": 2, "gridCol": 2, "offset": { "x": 0, "y": 0 } },
+        { "layer": 2, "gridRow": 2, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 2, "gridRow": 2, "gridCol": 4, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 2, "gridRow": 3, "gridCol": 2, "offset": { "x": 0, "y": 0 } },
+        { "layer": 2, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 2, "gridRow": 3, "gridCol": 4, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 2, "gridRow": 4, "gridCol": 2, "offset": { "x": 0, "y": 0 } },
+        { "layer": 2, "gridRow": 4, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 2, "gridRow": 4, "gridCol": 4, "offset": { "x": 0, "y": 0 } },
+
+        { "layer": 3, "gridRow": 2, "gridCol": 2, "offset": { "x": -45, "y": 0 } },
+        { "layer": 3, "gridRow": 2, "gridCol": 4, "offset": { "x": 45, "y": 0 } },
+        { "layer": 3, "gridRow": 4, "gridCol": 2, "offset": { "x": -45, "y": 0 } },
+        { "layer": 3, "gridRow": 4, "gridCol": 4, "offset": { "x": 45, "y": 0 } },
+
+        { "layer": 3, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 3, "gridRow": 2, "gridCol": 3, "offset": { "x": 0, "y": 45 } },
+        { "layer": 3, "gridRow": 4, "gridCol": 3, "offset": { "x": 0, "y": -45 } },
+        { "layer": 3, "gridRow": 3, "gridCol": 2, "offset": { "x": -45, "y": 0 } },
+        { "layer": 3, "gridRow": 3, "gridCol": 4, "offset": { "x": 45, "y": 0 } },
+
+        { "layer": 4, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
+        { "layer": 4, "gridRow": 2, "gridCol": 3, "offset": { "x": 0, "y": 45 } },
+        { "layer": 4, "gridRow": 4, "gridCol": 3, "offset": { "x": 0, "y": -45 } },
+        { "layer": 4, "gridRow": 3, "gridCol": 2, "offset": { "x": -45, "y": 0 } },
+        { "layer": 4, "gridRow": 3, "gridCol": 4, "offset": { "x": 45, "y": 0 } },
+
+        { "layer": 5, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": 45 } },
+        { "layer": 5, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": -45 } }
+    ]
+}
+
+

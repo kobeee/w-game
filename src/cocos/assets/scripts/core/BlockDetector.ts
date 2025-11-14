@@ -43,6 +43,10 @@ export class BlockDetector {
      * 卡片尺寸
      */
     private static readonly CARD_SIZE = 90;
+    /**
+     * 子网格尺寸（卡片的1/2）
+     */
+    private static readonly CELL = 45;
 
     /**
      * 获取卡片的4个象限矩形
@@ -134,53 +138,18 @@ export class BlockDetector {
     }
 
     /**
-     * 判断卡片是否被遮挡（新算法：4象限法）
-     *
-     * ✅ 正确规则：只要4个象限中有任意一个被上层卡片遮挡，整个卡片就不可点击！
-     * ✅ 关键修正：检查所有更高层级的卡片（layer > 当前层），而非仅相邻上层
-     * 原因：多层堆叠场景中，顶层卡片可以跨层直接遮挡底层卡片
-     *
-     * @param card 待检测卡片
-     * @param cards 所有卡片
-     * @returns 是否被遮挡
+     * 计算卡片占用的1/4网格（共4个45×45子网格）
+     * 子网格坐标采用全局统一CELL对齐（世界坐标/45向下取整）
      */
-    static isCardBlocked(card: Card, cards: Card[]): boolean {
-        if (card.removed) {
-            return true;
-        }
-
-        // 找出所有更高层级的卡片（layer > 当前层）
-        const upperLayerCards = cards.filter(
-            c => c.layer > card.layer && !c.removed
-        );
-
-        if (upperLayerCards.length === 0) {
-            return false;
-        }
-
-        // 检查四个象限
-        const quadrants = [
-            Quadrant.TOP_RIGHT,
-            Quadrant.TOP_LEFT,
-            Quadrant.BOTTOM_LEFT,
-            Quadrant.BOTTOM_RIGHT
+    private static getOccupiedCells(card: Card): Array<{ x: number; y: number }> {
+        const leftCell = Math.floor(card.rect.x / this.CELL);
+        const bottomCell = Math.floor(card.rect.y / this.CELL);
+        return [
+            { x: leftCell, y: bottomCell },           // 左下
+            { x: leftCell + 1, y: bottomCell },       // 右下
+            { x: leftCell, y: bottomCell + 1 },       // 左上
+            { x: leftCell + 1, y: bottomCell + 1 }    // 右上
         ];
-
-        // 只要任意一个象限被遮挡，卡片就不可点击
-        for (const quadrant of quadrants) {
-            const quadrantRegion = this.getQuadrantRegion(card, quadrant);
-
-            // 检查这个象限是否被任意上层卡片遮挡
-            const isQuadrantBlocked = upperLayerCards.some(upperCard => {
-                return this.isQuadrantBlocked(quadrantRegion, upperCard);
-            });
-
-            if (isQuadrantBlocked) {
-                return true; // 任意象限被遮挡，卡片就不可点击
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -189,19 +158,46 @@ export class BlockDetector {
      * @param cards 所有卡片
      */
     static updateAllBlockStatus(cards: Card[]): void {
-        // 重置所有卡片为可点击
+        // 先重置所有卡片为可点击
         for (const card of cards) {
             if (!card.removed) {
                 card.blocked = false;
             }
         }
 
-        // 更新遮挡状态
+        // 构建子网格 -> 卡片栈映射（只考虑未移除的卡片）
+        const cellMap = new Map<string, Card[]>();
         for (const card of cards) {
-            if (!card.removed) {
-                card.blocked = this.isCardBlocked(card, cards);
+            if (card.removed) continue;
+            const cells = this.getOccupiedCells(card);
+            for (const cell of cells) {
+                const key = `${cell.x},${cell.y}`;
+                let list = cellMap.get(key);
+                if (!list) {
+                    list = [];
+                    cellMap.set(key, list);
+                }
+                list.push(card);
             }
         }
+
+        // 对每个子网格内的卡片按 layer 排序，只有栈顶卡片在该子网格上可见
+        cellMap.forEach((cardsInCell) => {
+            if (cardsInCell.length <= 1) {
+                return;
+            }
+
+            // 底层在前，上层在后
+            cardsInCell.sort((a, b) => a.layer - b.layer);
+
+            // 除了栈顶之外，其余卡片在该子网格上都视为被遮挡
+            for (let i = 0; i < cardsInCell.length - 1; i++) {
+                const lower = cardsInCell[i];
+                if (!lower.removed) {
+                    lower.blocked = true;
+                }
+            }
+        });
     }
 
     /**
@@ -224,3 +220,4 @@ export class BlockDetector {
         return !card.blocked && !card.removed;
     }
 }
+

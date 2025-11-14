@@ -62,19 +62,26 @@ export class StackBoard extends Component {
     }
 
     /**
-     * 更新所有卡片的rect（使用实际世界坐标）
+     * 更新所有卡片的rect（使用实际世界坐标 + 实际UI尺寸）
      * 这是遮挡判定的基础，必须在所有卡片节点创建并设置位置后调用
      */
     private updateCardRects(): void {
         for (const card of this.cards) {
-            if (!this.tileNodes.get(card.id)) continue;
+            const tileNode = this.tileNodes.get(card.id);
+            if (!tileNode) continue;
 
             const worldPos = card.position;
-            const cardWidth = 90;
-            const cardHeight = 90;
 
-            card.rect.x = worldPos.x - cardWidth / 2;
-            card.rect.y = worldPos.y - cardHeight / 2;
+            // 优先使用实际 UITransform 尺寸，避免与美术尺寸不一致导致“看上去被挡、数据上没重叠”
+            const uiTransform = tileNode.getComponent(UITransform);
+            const cardWidth = uiTransform ? uiTransform.contentSize.width : 90;
+            const cardHeight = uiTransform ? uiTransform.contentSize.height : 90;
+
+            const halfW = cardWidth / 2;
+            const halfH = cardHeight / 2;
+
+            card.rect.x = worldPos.x - halfW;
+            card.rect.y = worldPos.y - halfH;
             card.rect.width = cardWidth;
             card.rect.height = cardHeight;
         }

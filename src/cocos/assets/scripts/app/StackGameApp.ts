@@ -100,6 +100,18 @@ export class StackGameApp extends Component {
     private validationsInFlight: number = 0;
     // 延迟结束原因（例如槽满时先等待验证结果）
     private pendingEndReason: string | null = null;
+    // 当前局使用的布局路径（resources/ 下的相对路径，不带扩展名）
+    private lastLayoutPath: string | null = null;
+
+    // 可用于正式游玩的堆叠布局池（排除 pyramid_default）
+    private static readonly GRID_LAYOUT_POOL: string[] = [
+        'layouts/sheep_style_complex',
+        'layouts/stack_center_tower',
+        'layouts/stack_cross_towers',
+        'layouts/stack_diagonal_ridge',
+        'layouts/stack_ring_fortress',
+        'layouts/stack_multi_towers'
+    ];
 
     protected async onLoad(): Promise<void> {
         // 初始化AI单词验证系统
@@ -297,15 +309,37 @@ export class StackGameApp extends Component {
     }
 
     /**
+     * 选择布局路径：
+     * - 显式传入 layoutPath 时优先使用；
+     * - 否则如果已有 lastLayoutPath（本局/上一局）则复用；
+     * - 初次进入场景则从 GRID_LAYOUT_POOL 中随机挑选一个。
+     */
+    private resolveLayoutPath(layoutPath?: string): string {
+        if (layoutPath && layoutPath.trim().length > 0) {
+            return layoutPath;
+        }
+        if (this.lastLayoutPath && this.lastLayoutPath.trim().length > 0) {
+            return this.lastLayoutPath;
+        }
+        const pool = StackGameApp.GRID_LAYOUT_POOL;
+        if (!pool || pool.length === 0) {
+            // 兜底：保持与旧版本兼容
+            return 'layouts/sheep_style_complex';
+        }
+        const idx = Math.floor(Math.random() * pool.length);
+        return pool[idx];
+    }
+
+    /**
      * 开始游戏
      * @param seed 关卡种子
      * @param useGridLayout 是否使用网格布局系统（默认为true）
-     * @param layoutPath 网格布局配置文件路径（相对于resources/，默认为'layouts/pyramid_default'）
+     * @param layoutPath 可选：网格布局配置文件路径（相对于resources/）
      */
     public async startGame(
         seed?: string,
         useGridLayout: boolean = true,
-        layoutPath: string = 'layouts/pyramid_default'
+        layoutPath?: string
     ): Promise<void> {
         // ✅ 在游戏真正开始时初始化WordMatcher（此时GlossService已加载）
         if (!this.wordMatcher) {
@@ -313,6 +347,9 @@ export class StackGameApp extends Component {
         }
 
         const dailySeed = seed || LevelGenerator.getDailySeed();
+        const resolvedLayoutPath = this.resolveLayoutPath(layoutPath);
+        // 记录本局使用的布局，供“再来一局”复用
+        this.lastLayoutPath = resolvedLayoutPath;
 
         try {
             if (useGridLayout) {
@@ -324,7 +361,7 @@ export class StackGameApp extends Component {
 
                 // 加载并转换为Level
                 this.currentLevel = await GridLayoutLoader.loadAndConvertToLevel(
-                    layoutPath,
+                    resolvedLayoutPath,
                     wordPool,
                     dailySeed
                 );
@@ -333,7 +370,7 @@ export class StackGameApp extends Component {
 
                 // 打印布局信息
                 GridLayoutLoader.debugPrintLayout(
-                    await GridLayoutLoader.loadLayout(layoutPath)
+                    await GridLayoutLoader.loadLayout(resolvedLayoutPath)
                 );
 
             } else {
@@ -802,7 +839,8 @@ export class StackGameApp extends Component {
         this.wordsCleared = [];
         this.longestWordLen = 0;
         this.gameState = GameState.IDLE;
-        this.startGame();
+        // 再来一局：沿用上一局的布局，不重新随机
+        this.startGame(undefined, true, this.lastLayoutPath || undefined);
     }
 
     public onBackToMenuClicked(): void {
@@ -848,7 +886,8 @@ export class StackGameApp extends Component {
      * 重新开始游戏
      */
     public restartGame(): void {
-        this.startGame();
+        // 重新开始：保持当前布局不变
+        this.startGame(undefined, true, this.lastLayoutPath || undefined);
     }
 
     /**
