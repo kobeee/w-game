@@ -1,6 +1,143 @@
-> # CHANGELOG（近期关键变更）
-> 
-> > 归档说明：完整历史已复制到 `docs/archive/CHANGELOG-ARCHIVE.md`，本文件仅保留最近且重要的变更。
+# CHANGELOG（近期关键变更）
+
+> 归档说明：完整历史已复制到 `docs/archive/CHANGELOG-ARCHIVE.md`，本文件仅保留最近且重要的变更。
+
+## 2025-11-15 - 🐛 [BUGFIX+INVESTIGATION] 单词缓存与去重机制修复（未完全解决）
+- 背景
+  - 现象：Gemini 后端服务集成后，第一次验证 BAN 耗时 955ms 并返回中文释义，但第二次验证相同单词时仍未使用缓存，GlossService 无法取回中文释义。
+  - 用户诉求：确保重复查询的同一单词走缓存路径，第二次耗时应 < 10ms。
+
+- 排查与修复（共 4 个问题）
+
+  **问题 1：WordCache 调试代码残留** ✅ 已修复
+  - 根因：`WordCache.ts` 构造函数包含 `delete this.l2['BAN']` 的调试代码，导致每次初始化时都清除 BAN 的缓存。
+  - 修复：删除该行调试代码。
+  - 文件：`src/cocos/assets/scripts/services/WordCache.ts`
+
+  **问题 2：WordValidationManager 缺少单飞去重** ✅ 已修复
+  - 根因：同一单词多次验证请求时，`validateConcurrent()` 创建多个独立的 Promise 链，而非复用第一个的结果。
+  - 修复：新增 `validatingPromises: Map<string, Promise<ValidateResult>>` 用于跟踪在途验证，若发现相同单词正在验证则复用其 Promise。
+  - 文件：`src/cocos/assets/scripts/services/WordValidationManager.ts`
+
+  **问题 3：缓存键不统一** ✅ 已修复
+  - 根因：
+    - `NetworkService` 写入 L2 缓存使用的键为 `'wgame_wc_v1'`（本地写入时）
+    - `WordCache` / `GlossService` 读取缓存使用的键为 `'wgame_word_cache_v2'`（来自 config）
+    - 导致 NetworkService 的缓存写入与 WordCache 的缓存读取完全对接不上
+  - 修复：
+    - NetworkService 改为导入 `WORD_CACHE_STORE_KEY` 常量，统一使用 `'wgame_word_cache_v2'`
+    - 文件：`src/cocos/assets/scripts/services/NetworkService.ts`
+
+  **问题 4：缓存数据结构不匹配** ✅ 已修复
+  - 根因：
+    - NetworkService L2 缓存写入格式：`{ v, d, t, e }` （`d` 为英文定义）
+    - WordCache 期望格式：`{ v, de?, dz?, s, t, e }` （`de` 英文定义、`dz` 中文定义、`s` 源标记）
+  - 修复：
+    - 更新 NetworkService L2 缓存数据结构定义为 `{ v, de?, dz?, s?, t, e }`
+    - 修改 L2 缓存写入操作，使用 `dz` 字段存储中文释义、`s` 字段存储来源标记
+    - 修改 L2 缓存读取操作，从 `e.dz` 读取中文释义
+    - 文件：`src/cocos/assets/scripts/services/NetworkService.ts`
+
+- 未完全解决的核心问题 ⚠️ TODO
+  - **现象**：尽管修复了上述 4 个问题，第二次查询 BAN 仍报告 `[GlossService][miss]`，无法获取到缓存的中文释义。
+  - **推测原因**（未验证）：
+    1. localStorage 的写入与读取存在时序问题（NetworkService 批量 flush 机制可能延迟落盘）
+    2. GlossService 的 `explain()` 方法中缓存读取逻辑仍有遗漏
+    3. 该单词的验证结果中定义字段可能为 `undefined` 或 `null`，导致落盘时被过滤
+    4. 字母大小写规范化不一致导致键查询失败
+  - **验证思路**（待后续）：
+    1. 检查 NetworkService L2 缓存写入时的 `flush()` 调用时机与批量大小
+    2. 加印 localStorage 实际存储的数据内容（验证是否确实已持久化）
+    3. 确认 GlossService.explain() 的 L2 缓存查询路径完整
+    4. 增加单词大小写规范化的日志跟踪
+
+- 修改文件清单
+  - `src/cocos/assets/scripts/services/WordCache.ts`：删除 BAN 缓存清除代码
+  - `src/cocos/assets/scripts/services/WordValidationManager.ts`：添加单飞去重机制与 validatingPromises Map
+  - `src/cocos/assets/scripts/services/NetworkService.ts`：
+    - 导入 WORD_CACHE_STORE_KEY 常量
+    - 统一 L2 缓存键为 `'wgame_word_cache_v2'`
+    - 更新 L2 缓存数据结构与读写操作
+
+- 教训
+  - 多个模块共享缓存时，必须统一缓存键、数据结构与持久化策略，否则会出现"数据写入黑洞"的隐蔽问题
+  - localStorage 的 flush 时机与 get 时机需要精确协调，否则会出现"写入后立即读不到"的竞态问题
+  - 单飞去重机制必须完整实现，否则会有无效的重复网络请求浪费带宽与延迟
+
+## 2025-11-15 - 🔌 [MAJOR] 后端服务重新集成（规避 Gemini 地理限制）
+
+### 背景与问题
+- Cloudflare Worker 出站 IP 被 Google Gemini API 的地理位置限制拦截（返回 HTTP 400 FAILED_PRECONDITION）
+- 需要利用海外部署的后端服务来调用 Gemini（后端网络环境不受限制）
+
+### 整体方案
+- **客户端** → **Worker（RSA-OAEP 加密）** → **后端服务** → **Gemini API**
+- Worker 在边缘负责加密，后端在海外负责调用 Gemini 和缓存
+
+### 修改内容
+
+#### ✅ Worker (`tools/cloudflare/worker.js`)
+- 硬编码 RSA-2048 公钥（SPKI DER Base64 格式，来自 `src/backend/public.pem`）
+- 新增 `importRsaPublicKey()` 和 `encryptRsaOaep()` 函数
+- 修改 `/w-game-service` 路由处理：
+  - 读取明文请求体
+  - 使用 RSA-OAEP-SHA256 加密
+  - 将密文放入 `X-Encrypted-Payload` 头
+  - 清空请求体，转发加密请求到后端
+
+#### ✅ 客户端 (`src/cocos/assets/scripts/services/NetworkService.ts`)
+- `BASE_URL` 改为 `https://ai.elvis1949.cloudns.pro/w-game-service`
+- `GENERATE_PATH` 改为 `/api/v1/word/verify`
+- `callGeminiValidate()` 改为直接调用后端接口，请求体简化为 `{"word": "..."}`
+- 删除 Gemini 特定的 prompt 和 JSON 解析逻辑
+- 删除 `extractTextFromGemini()` 和 `tryParseJson()` 方法
+
+#### ✅ 后端 (`src/backend/word_validator.py`)
+- 优化 `call_gemini_api()` 的 prompt：改为中文指示，清晰阐述任务
+- 增加 `responseSchema` 配置，强制 Gemini 返回规范 JSON
+- `maxOutputTokens` 从 32 提升至 64（容纳更长中文释义）
+
+### 技术细节
+
+#### 加密流程
+1. Worker 导入公钥（SPKI DER 格式）
+2. 对明文 JSON 进行 RSA-OAEP-SHA256 加密
+3. 密文转 Base64 后放入 `X-Encrypted-Payload` 头
+4. 清空请求体，避免明文泄露
+
+#### 解密流程（后端已实现，无需改动）
+1. RSA 中间件从 `X-Encrypted-Payload` 头提取密文
+2. 使用私钥解密（在 `src/backend/middleware/rsa_decrypt.py`）
+3. 验证时间戳（±90秒）和 Nonce（Redis 防重放）
+4. 注入解密后的单词到请求体
+
+#### 长连接支持
+- 客户端 ↔ Worker：自动 Keep-Alive
+- Worker ↔ 后端：fetch() 默认支持
+- 后端 ↔ Gemini：httpx AsyncClient 配置了连接池
+
+### 预期效果
+- 后端调用 Gemini 不再受地理限制
+- 相同的多层缓存和防护机制继续生效
+- 端到端延迟仍在 300-900ms 范围内（包括加密开销）
+- 支持完整的回滚方案（若需恢复直连 Gemini）
+
+### 部署清单
+- [ ] 后端服务部署到海外（`http://elvis1949.top:9100`）
+- [ ] Worker 代码部署（使用 Wrangler）
+- [ ] 客户端构建并发布
+- [ ] 验证完整链路正常工作
+
+### 文档
+- 新增 `docs/design/dev/014-后端服务重新集成方案.md`
+  - 完整的架构设计、部署步骤、验证检查清单、常见问题
+
+### 安全考虑
+- ✓ 公钥硬编码在 Worker（无安全风险）
+- ✓ 私钥仅在后端存储（文件权限 600）
+- ✓ API Key 通过环境变量注入
+- ✓ 时间戳和 Nonce 防重放
+
 > 
 > ## 2025-11-05 - 🧹 [CLEANUP] Worker 统一加密稳定化 + 客户端日志精简
 > - Worker（`tools/cloudflare/worker.js`）

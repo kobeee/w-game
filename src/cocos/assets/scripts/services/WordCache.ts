@@ -17,12 +17,7 @@ export class WordCache {
     private dirty = 0;
 
     constructor() {
-        // DEBUG: 清除 BAN 的缓存用于测试
-        if (this.l2['BAN']) {
-            console.warn('[WordCache][DEBUG] 删除缓存中的 BAN');
-            delete this.l2['BAN'];
-            this.flush(true);
-        }
+        // 无需清理缓存
     }
 
     private loadL2(): Record<string, CacheEntry> {

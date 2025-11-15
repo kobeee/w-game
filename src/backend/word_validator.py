@@ -233,9 +233,9 @@ async def call_gemini_api(word: str) -> dict:
         验证结果 {"valid": bool, "definition": str}
     """
     prompt = (
-        f"判断\"{word}\"是否是有效的英语单词（包括俚语、专有名词）。\n"
-        f"如果是，用10字以内的中文解释其含义。\n"
-        f"仅返回JSON: {{\"valid\": true/false, \"definition\": \"释义\"}}"
+        f"给出单词\"{word}\"的简体中文释义（≤10字，简洁直白）。\n"
+        f"仅返回JSON，格式：{{\"definition\": \"中文释义\"}}\n"
+        f"禁止任何非JSON内容（含Markdown、说明、代码块）。"
     )
 
     try:
@@ -252,10 +252,17 @@ async def call_gemini_api(word: str) -> dict:
                 }],
                 "generationConfig": {
                     "temperature": 0.0,
-                    "maxOutputTokens": 32,
+                    "maxOutputTokens": 64,
                     "candidateCount": 1,
                     # 强制结构化 JSON，避免 markdown 包裹
-                    "responseMimeType": "application/json"
+                    "responseMimeType": "application/json",
+                    "responseSchema": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "definition": {"type": "STRING"}
+                        },
+                        "required": ["definition"]
+                    }
                 }
             }
         )
@@ -290,23 +297,24 @@ async def call_gemini_api(word: str) -> dict:
         if parsed is None:
             raise json.JSONDecodeError("Failed to parse Gemini JSON", text, 0)
 
+        # 单词已通过 dictionaryapi.dev 验证，这里仅返回中文释义
         return {
-            "valid": parsed.get("valid", False),
+            "valid": True,
             "definition": parsed.get("definition", ""),
         }
 
     except httpx.TimeoutException:
         logger.error(f"[Gemini] ⚠️ 请求超时: {word}")
-        return {"valid": False, "error": "GEMINI_TIMEOUT"}
+        return {"valid": True, "definition": "", "error": "GEMINI_TIMEOUT"}
     except httpx.HTTPStatusError as e:
         logger.error(f"[Gemini] ⚠️ HTTP 错误 {e.response.status_code}: {word}")
-        return {"valid": False, "error": f"GEMINI_HTTP_{e.response.status_code}"}
+        return {"valid": True, "definition": "", "error": f"GEMINI_HTTP_{e.response.status_code}"}
     except (KeyError, json.JSONDecodeError) as e:
         logger.error(f"[Gemini] ⚠️ 解析返回失败: {e}")
-        return {"valid": False, "error": "GEMINI_PARSE_ERROR"}
+        return {"valid": True, "definition": "", "error": "GEMINI_PARSE_ERROR"}
     except Exception as e:
         logger.error(f"[Gemini] ⚠️ 未知错误: {e}")
-        return {"valid": False, "error": "INTERNAL_ERROR"}
+        return {"valid": True, "definition": "", "error": "INTERNAL_ERROR"}
 
 
 # ===== 工具函数 =====

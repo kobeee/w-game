@@ -34,12 +34,18 @@ export class WordValidationManager {
     private isInitialized: boolean = false;
     private onFinishedCallback: ((word: string, result: ValidateResult) => void) | null = null;
     /**
-     * 将原先的“单一防抖计时器”改为“按单词分组”的计时器
+     * 将原先的"单一防抖计时器"改为"按单词分组"的计时器
      * 这样在一次批量后缀校验（如 DARE/ARE/RE...）时，互不干扰，不会相互取消
      */
     private timersByWord: Map<string, any> = new Map();
     private pendingsByWord: Map<string, PendingValidation> = new Map();
     private currentAbort: AbortController | null = null;
+
+    /**
+     * 单飞去重：记录同一单词正在进行的 Promise
+     * 若同一单词的验证正在进行中，后续请求复用该 Promise，不发新请求
+     */
+    private validatingPromises: Map<string, Promise<ValidateResult>> = new Map();
 
     /**
      * 初始化验证管理器
@@ -62,6 +68,11 @@ export class WordValidationManager {
      * 并发执行单词验证（与飞行动画并发）
      * 返回Promise，在验证完成时resolve
      *
+     * 核心特性：
+     * 1. 单飞去重：同一单词的验证正在进行中，后续请求复用该 Promise
+     * 2. 防抖合并：同一单词在短时间内的多次请求，仅发起一次网络请求
+     * 3. 缓存优先：命中客户端缓存直接返回，无需网络
+     *
      * @param word 要验证的单词
      * @returns Promise<ValidateResult>
      */
@@ -74,6 +85,12 @@ export class WordValidationManager {
             state: 'validating',
             result: null
         };
+
+        // === 单飞去重：检查是否有同一单词的验证正在进行 ===
+        const existingPromise = this.validatingPromises.get(upperWord);
+        if (existingPromise) {
+            return existingPromise;
+        }
 
         // 清理同一个单词的上一计时器（不影响其他单词）
         const prevTimer = this.timersByWord.get(upperWord);
@@ -89,7 +106,8 @@ export class WordValidationManager {
             result: null
         });
 
-        return new Promise<ValidateResult>((resolve) => {
+        // 创建新的验证 Promise，存入 validatingPromises
+        const validationPromise = new Promise<ValidateResult>((resolve) => {
             const timer = setTimeout(async () => {
                 try {
                     // 在途取消：开始新一轮前取消旧请求
@@ -133,13 +151,19 @@ export class WordValidationManager {
                     }
                     resolve(errorResult);
                 } finally {
-                    // 清理该单词的计时器
+                    // 清理该单词的计时器和单飞Promise
                     this.timersByWord.delete(upperWord);
+                    this.validatingPromises.delete(upperWord);
                 }
             }, REMOTE_MERGE_WINDOW_MS); // 远端合并窗口（仅对相同单词生效）
 
             this.timersByWord.set(upperWord, timer);
         });
+
+        // 将该 Promise 存入单飞去重表，供后续相同单词复用
+        this.validatingPromises.set(upperWord, validationPromise);
+
+        return validationPromise;
     }
 
     /**
@@ -171,6 +195,7 @@ export class WordValidationManager {
         this.timersByWord.forEach((t) => clearTimeout(t));
         this.timersByWord.clear();
         this.pendingsByWord.clear();
+        this.validatingPromises.clear(); // 清理单飞去重表
 
         // 保持对外字段为初始状态
         this.pendingValidation = {

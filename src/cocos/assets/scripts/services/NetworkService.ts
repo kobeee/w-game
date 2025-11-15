@@ -22,7 +22,8 @@ import {
     DEFINITION_MAX_LEN,
     PERSIST_TTL_VALID_DAYS,
     PERSIST_TTL_INVALID_DAYS,
-    PERSIST_BATCH_THRESHOLD
+    PERSIST_BATCH_THRESHOLD,
+    WORD_CACHE_STORE_KEY
 } from '../config/word-validate';
 // WeChat Mini Game global (type hint only; no runtime impact)
 declare const wx: any;
@@ -68,15 +69,15 @@ class NetworkError extends Error {
  * 网络服务单例
  */
 export class NetworkService {
-    // Cloudflare Worker 直连 Gemini 代理（客户端无需感知模型）
-    // 统一调用 /gemini/generate，由 Worker 选择默认/指定模型并转发到官方
-    private static readonly BASE_URL = 'https://ai.elvis1949.cloudns.pro/gemini';
-    private static readonly GENERATE_PATH = '/generate';
+    // Cloudflare Worker 代理到后端服务（通过 RSA-OAEP 加密）
+    // Worker 在边缘负责加密，后端进行 Gemini 调用
+    private static readonly BASE_URL = 'https://ai.elvis1949.cloudns.pro/w-game-service';
+    private static readonly GENERATE_PATH = '/api/v1/word/verify';
     private static readonly DEFAULT_TIMEOUT = 5000; // 5秒，提高容错
     private static readonly MAX_RETRIES = 1; // 最多重试 1 次
     private static readonly WORD_CACHE_TTL_MS = 60 * 60 * 1000; // 1小时
-    // L2（localStorage）持久化缓存
-    private static readonly STORE_KEY = 'wgame_wc_v1';
+    // L2（localStorage）持久化缓存，与 WordCache/GlossService 统一 key
+    private static readonly STORE_KEY = WORD_CACHE_STORE_KEY; // 'wgame_word_cache_v2'
     private static readonly L2_TTL_VALID_MS = PERSIST_TTL_VALID_DAYS * 24 * 60 * 60 * 1000;
     private static readonly L2_TTL_INVALID_MS = PERSIST_TTL_INVALID_DAYS * 24 * 60 * 60 * 1000;
 
@@ -86,10 +87,11 @@ export class NetworkService {
     private static inflight: Map<string, Promise<{ request_id?: string; valid: boolean; definition?: string; source?: string; word?: string; latency_ms?: number; checked_at?: string; error_code?: number; message?: string }>> = new Map();
 
     // ========== L2 本地持久化结构 ==========
-    private static l2Dict: Record<string, { v: boolean; d?: string; t: number; e: number }> = NetworkService.loadL2();
+    // 格式与 WordCache 一致：{ v, de?, dz?, s, t, e }
+    private static l2Dict: Record<string, { v: boolean; de?: string; dz?: string; s?: string; t: number; e: number }> = NetworkService.loadL2();
     private static l2DirtyCount = 0;
 
-    private static loadL2(): Record<string, { v: boolean; d?: string; t: number; e: number }> {
+    private static loadL2(): Record<string, { v: boolean; de?: string; dz?: string; s?: string; t: number; e: number }> {
         try {
             const raw = sys.localStorage.getItem(NetworkService.STORE_KEY);
             if (!raw) return {};
@@ -395,7 +397,7 @@ export class NetworkService {
                 const nowTs = Date.now();
                 const e = NetworkService.l2Dict[upper];
                 if (e && e.e > nowTs) {
-                    const defFromL2 = NetworkService.ensureChinese(e.d || '');
+                    const defFromL2 = NetworkService.ensureChinese(e.dz || '');  // 使用 dz 字段（中文释义）
                     // 回写到 L1，会话期 1h
                     NetworkService.wordCache.set(upper, {
                         value: { valid: !!e.v, definition: defFromL2, source: 'cache' },
@@ -432,10 +434,16 @@ export class NetworkService {
                     expireAt: Date.now() + NetworkService.WORD_CACHE_TTL_MS
                 });
 
-                // 写入 L2（正/负缓存）
+                // 写入 L2（正/负缓存）- 格式与 WordCache 一致
                 const ttl = isValid ? NetworkService.L2_TTL_VALID_MS : NetworkService.L2_TTL_INVALID_MS;
                 const now2 = Date.now();
-                NetworkService.l2Dict[upper] = { v: isValid, d: normalizedDef, t: now2, e: now2 + ttl };
+                NetworkService.l2Dict[upper] = {
+                    v: isValid,
+                    dz: normalizedDef,  // 存储为中文释义（与 WordCache 格式一致）
+                    s: resolvedSource, // 保存来源
+                    t: now2,
+                    e: now2 + ttl
+                };
                 NetworkService.l2DirtyCount++;
                 NetworkService.flushL2IfNeeded(false);
 
@@ -459,87 +467,60 @@ export class NetworkService {
     }
 
     /**
-     * 直接调用 Gemini 进行验证，Worker 会在边缘注入 API Key
+     * 调用后端服务进行单词验证
+     * Worker 负责 RSA 加密，后端负责 Gemini 调用和缓存
      */
-    private static async callGeminiValidate(wordUpper: string): Promise<{ valid: boolean; definition?: string }> {
+    private static async callGeminiValidate(wordUpper: string): Promise<{ valid: boolean; definition?: string; source?: string }> {
         const endpoint = `${NetworkService.GENERATE_PATH}`;
-        const prompt = `你是词典助手。请仅返回 JSON。
-输入保证是有效英文单词，无需再次判断有效性。
-请用简体中文在 10 字以内给出该词的简明释义，避免赘述与例句。
-输出 JSON 严格符合：
-{"valid": true, "definition": "中文释义（≤10字）"}
-不得输出除 JSON 外的任何字符（禁止 Markdown、代码块、解释说明）。
-输入："${wordUpper}"`;
 
+        // 请求体：明文 JSON，由 Worker 负责加密后转发
         const body = {
-            contents: [{
-                role: 'user',
-                parts: [{ text: prompt }]
-            }],
-            generationConfig: {
-                temperature: 0.0,
-                maxOutputTokens: 64,
-                candidateCount: 1,
-                responseMimeType: 'application/json',
-                responseSchema: {
-                    type: 'OBJECT',
-                    properties: {
-                        valid: { type: 'BOOLEAN' },
-                        definition: { type: 'STRING' }
-                    },
-                    required: ['valid', 'definition']
-                }
-            }
+            word: wordUpper
         };
 
-        type GeminiResp = any;
-        console.info('[Gemini][send]', { word: wordUpper });
-        const resp = await NetworkService.post<GeminiResp>(endpoint, body, NetworkService.DEFAULT_TIMEOUT);
-        // 解析 Gemini 返回（candidates[0].content.parts[0].text 可能是 JSON 字符串）
-        const text = NetworkService.extractTextFromGemini(resp);
-        console.info('[Gemini][recv]', { word: wordUpper, textLen: (text && text.length) || 0 });
-        const parsed = NetworkService.tryParseJson(text);
-        console.info('[Gemini][parse]', { word: wordUpper, ok: !!(parsed && typeof parsed.valid === 'boolean') });
-        if (parsed && typeof parsed.valid === 'boolean') {
-            return { valid: !!parsed.valid, definition: typeof parsed.definition === 'string' ? parsed.definition : '' };
-        }
-        // 容错：若已是对象
-        if (resp && typeof resp.valid === 'boolean') {
-            return { valid: !!resp.valid, definition: typeof resp.definition === 'string' ? resp.definition : '' };
-        }
-        // 解析失败视为无效
-        return { valid: false, definition: '' };
-    }
+        type BackendResp = {
+            request_id?: string;
+            valid: boolean;
+            definition?: string;
+            source?: string;
+            word?: string;
+            latency_ms?: number;
+            checked_at?: string;
+            error_code?: number;
+            message?: string;
+        };
 
-    private static extractTextFromGemini(resp: any): string {
         try {
-            const c = resp && resp.candidates && resp.candidates[0];
-            const p = c && c.content && c.content.parts && c.content.parts[0];
-            const t = p && (p.text || p.inlineData);
-            return typeof t === 'string' ? t : '';
-        } catch (_) {
-            return '';
-        }
-    }
+            const resp = await NetworkService.post<BackendResp>(endpoint, body, NetworkService.DEFAULT_TIMEOUT);
 
-    private static tryParseJson(raw: string): any | null {
-        if (!raw) return null;
-        const clean = raw
-            .replace(/^```json\\s*/i, '')
-            .replace(/^```\\s*/i, '')
-            .replace(/```\\s*$/i, '')
-            .trim();
-        try {
-            return JSON.parse(clean);
-        } catch (_) {
-            // 截取第一个 {...} 片段再尝试
-            const m = clean.match(/\\{[\\s\\S]*\\}/);
-            if (m) {
-                try { return JSON.parse(m[0]); } catch (_) { /* ignore */ }
+            // 后端响应结构：
+            // {
+            //   "request_id": "2025-11-15-xxxxx",
+            //   "valid": true,
+            //   "definition": "中文释义",
+            //   "source": "cache|dict|gemini",
+            //   "word": "WORD",
+            //   "latency_ms": 123,
+            //   "checked_at": "2025-11-15T12:00:00Z"
+            // }
+
+            if (resp && typeof resp.valid === 'boolean') {
+                const normalizedDef = NetworkService.ensureChinese(resp.definition || '');
+                return {
+                    valid: !!resp.valid,
+                    definition: normalizedDef,
+                    source: resp.source || 'gemini'
+                };
             }
+
+            // 解析失败视为无效
+            return { valid: false, definition: '', source: 'gemini' };
+        } catch (error) {
+            console.error(`[NetworkService] ❌ 后端验证请求失败:`, error);
+            return { valid: false, definition: '', source: 'gemini' };
         }
-        return null;
     }
+
 }
 
 // 导出错误类型供外部使用
