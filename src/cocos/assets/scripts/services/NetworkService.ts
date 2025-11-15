@@ -472,13 +472,16 @@ export class NetworkService {
 输入："${wordUpper}"`;
 
         const body = {
-            contents: [{ parts: [{ text: prompt }] }],
+            contents: [{
+                role: 'user',
+                parts: [{ text: prompt }]
+            }],
             generationConfig: {
                 temperature: 0.0,
                 maxOutputTokens: 64,
                 candidateCount: 1,
-                response_mime_type: 'application/json',
-                response_schema: {
+                responseMimeType: 'application/json',
+                responseSchema: {
                     type: 'OBJECT',
                     properties: {
                         valid: { type: 'BOOLEAN' },

@@ -34,7 +34,9 @@ export class NewWordValidator {
         }
         // 0) 缓存命中
         const cached = this.cache.get(w);
-        if (cached) return { ...cached, source: 'cache' };
+        if (cached) {
+            return { ...cached, source: 'cache' };
+        }
 
         // 1) 本地词库 + 词形归一
         const local = await localLookupWithLemmatize(this.dict, w);
@@ -46,10 +48,9 @@ export class NewWordValidator {
                 source: 'local'
             };
             this.cache.putValid(w, 'local', undefined, local.zhDefinition);
-            // 若本地无中文且允许 Gemini，则同步尝试用 Gemini 补齐；失败则保留“暂无释义”
+            // 若本地无中文且允许 Gemini，则同步尝试用 Gemini 补齐；失败则保留"暂无释义"
             if (!local.zhDefinition && GEMINI_FALLBACK_ENABLED) {
                 try {
-                    console.info('[WordValidator][gemini-after-local][start]', w);
                     const g = await NetworkService.validateWord(w);
                     if (g && g.valid && g.definition) {
                         const zh = normalizeZh(g.definition);
@@ -57,20 +58,18 @@ export class NewWordValidator {
                             res.definitionZh = zh;
                             res.source = 'gemini';
                             this.cache.putValid(w, 'gemini', undefined, zh);
-                            console.info('[WordValidator][gemini-after-local][ok]', w, { zh });
-                        } else {
-                            console.info('[WordValidator][gemini-after-local][empty]', w);
                         }
-                    } else {
-                        console.info('[WordValidator][gemini-after-local][invalid]', w);
                     }
-                } catch (e: any) { console.info('[WordValidator][gemini-after-local][ex]', w, e && (e.message || String(e))); }
+                } catch (e: any) { /* ignore */ }
             }
             return res;
         }
 
         // 2) 快速否定层（布隆 + 轻规则）
-        if (!bloomMightContain(w) || violatesLightRules(w)) {
+        const bloomCheck = bloomMightContain(w);
+        const lightRuleCheck = violatesLightRules(w);
+
+        if (!bloomCheck || lightRuleCheck) {
             const res: ValidateResult = {
                 word: w,
                 valid: false,
@@ -98,24 +97,18 @@ export class NewWordValidator {
             // 先写入英文定义
             this.cache.putValid(w, 'dict', definitionEn, undefined);
 
-            // 若需要中文且允许 Gemini，则同步尝试用 Gemini 补齐中文（失败则忽略，UI 显示“暂无释义”）
+            // 若需要中文且允许 Gemini，则同步尝试用 Gemini 补齐中文（失败则忽略，UI 显示"暂无释义"）
             if (GEMINI_FALLBACK_ENABLED) {
                 try {
-                    console.info('[WordValidator][gemini-after-dict][start]', w);
                     const g = await NetworkService.validateWord(w);
                     if (g && g.valid && g.definition) {
                         const zh = normalizeZh(g.definition || '');
                         if (zh) {
                             result = { ...result, definitionZh: zh, source: 'gemini' };
                             this.cache.putValid(w, 'gemini', definitionEn, zh);
-                            console.info('[WordValidator][gemini-after-dict][ok]', w, { zh });
-                        } else {
-                            console.info('[WordValidator][gemini-after-dict][empty]', w);
                         }
-                    } else {
-                        console.info('[WordValidator][gemini-after-dict][invalid]', w);
                     }
-                } catch (e: any) { console.info('[WordValidator][gemini-after-dict][ex]', w, e && (e.message || String(e))); }
+                } catch (e: any) { /* ignore */ }
             }
             return result;
         }
@@ -135,8 +128,8 @@ export class NewWordValidator {
                     this.cache.putValid(w, 'gemini', undefined, zh);
                     return res;
                 }
-            } catch {
-                // ignore
+            } catch (e) {
+                /* ignore */
             }
         }
 

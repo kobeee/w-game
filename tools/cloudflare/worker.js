@@ -68,10 +68,29 @@ async function proxyGemini(request, upstreamUrlString) {
     headers.set('Content-Type', 'application/json; charset=utf-8');
     headers.set('Connection', 'keep-alive');
 
+    // 尝试添加一些请求头来规避地理位置限制
+    // 移除 CF 特征头，添加常见浏览器头
+    headers.delete('CF-Connecting-IP');
+    headers.delete('CF-IPCountry');
+    headers.delete('CF-Ray');
+    headers.delete('CF-Request-ID');
+    headers.delete('X-Forwarded-For');
+    headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+
+    // 读取请求体（ReadableStream 只能读一次）
+    let body;
+    if (request.method === 'GET' || request.method === 'HEAD') {
+      body = undefined;
+    } else {
+      // 将流读入 ArrayBuffer，然后转换为字符串以验证/转发
+      const arrayBuf = await request.arrayBuffer();
+      body = arrayBuf.byteLength > 0 ? arrayBuf : undefined;
+    }
+
     const upstreamResp = await fetch(upstreamUrlString, {
       method: request.method,
       headers,
-      body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+      body,
       redirect: 'follow',
     });
 

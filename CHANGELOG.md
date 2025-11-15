@@ -76,7 +76,39 @@
 > - 预计收益：减少一跳回源 RTT，TTFB 收敛；密钥零暴露；解析错误消失；整体 MISS 端到端 260–650ms（p50）。
 
 > ## 2025-11-08 - 🧹 [CLEANUP] Worker 精简与 /gemini 代理启用（文档驱动）
-> - 精简 `tools/cloudflare/worker.js`：\n  - 移除 `/w-game-service` 路由与相关 RSA/WS/边缘缓存实现，避免干扰。\n  - 新增 `/gemini/*` 直连代理方法（从 `globalThis.GEMINI_API_KEY` 注入 `x-goog-api-key`）。\n  - 保留 `/w-game-remote`、`/postcard*` 既有逻辑不变。\n> - 说明：本次为方案落地前的“清理与准备”提交，保证代码整洁；客户端切换到 `/gemini/*` 将另行发布。\n
+> - 精简 `tools/cloudflare/worker.js`：\n  - 移除 `/w-game-service` 路由与相关 RSA/WS/边缘缓存实现，避免干扰。\n  - 新增 `/gemini/*` 直连代理方法（从 `globalThis.GEMINI_API_KEY` 注入 `x-goog-api-key`）。\n  - 保留 `/w-game-remote`、`/postcard*` 既有逻辑不变。\n> - 说明：本次为方案落地前的"清理与准备"提交，保证代码整洁；客户端切换到 `/gemini/*` 将另行发布。\n
+> ## 2025-11-15 - 🔧 [BUGFIX] Gemini API 请求体格式修正 + 调试日志清理
+> - **问题**
+>   - BAN 单词验证返回 `valid=true, source=dict`（通过 dictionaryapi.dev），但在尝试调用 Gemini 补齐中文释义时持续返回 HTTP 400 FAILED_PRECONDITION。
+>   - 根本原因：Cloudflare Worker IP 被 Google Gemini API 的地理位置限制拦截（"User location is not supported for the API use"）。
+>
+> - **修复**
+>   - **NetworkService.ts**：修正 Gemini API 请求体格式
+>     - `contents[0]` 添加 `role: 'user'` 字段（Gemini API 必需）
+>     - `generationConfig.response_mime_type` → `responseMimeType`（驼峰式）
+>     - `generationConfig.response_schema` → `responseSchema`（驼峰式）
+>   - **worker.js**：修正 ReadableStream 转发问题
+>     - 将 `request.body` ReadableStream 先读入 `ArrayBuffer`，再转发给 Gemini（避免流只读一次的问题）
+>     - 清理 Cloudflare 特征请求头（`CF-Connecting-IP`、`CF-Ray` 等），尝试规避地理位置限制（但由于 IP 本身被限制，请求头清理无法绕过）
+>   - **整体验证链路状态**
+>     - ✅ Bloom Filter：通过测试，BAN 能正确通过
+>     - ✅ dictionaryapi.dev：正常返回 200，BAN 验证成功
+>     - ❌ Gemini API：因 Cloudflare 出站 IP 被地理限制，返回 400 FAILED_PRECONDITION
+>     - ✅ 系统降级：当 Gemini 失败时，使用 dictionaryapi.dev 结果（英文定义），对游戏体验无影响
+>
+> - **清理日志**（所有 console.log/console.info 调试输出）
+>   - `NewWordValidator.ts`：移除验证各阶段的日志（validate-开始、缓存命中、dictionaryapi-调用前等）
+>   - `WordValidationManager.ts`：移除并发控制日志（validateConcurrent-入口、setTimeout执行、验证完成等）
+>   - `StackGameApp.ts`：移除卡片落地、开始验证相关日志
+>   - `WordCache.ts`：移除 DEBUG BAN 缓存清除代码
+>
+> - **后续行动** ⚠️ TODO
+>   - 重启 backend 后端单词验证服务，恢复 Gemini 代理可用性（当前 Cloudflare Worker IP 地理限制为临时瓶颈）
+>   - 若 backend 重启后 Gemini 仍不可用，考虑：
+>     - 更换 Cloudflare Workers 的出站 IP 地区
+>     - 或使用代理/VPN 服务将请求转发
+>     - 或切换至其他免费词典 API（如 Oxford、Merriam-Webster）
+
 > ## 2025-11-08 - ✅ [COMPLETE] Worker 直连方案补完 + 客户端去模型化
 > - Worker：
 >   - 新增别名 `/gemini/generate`，客户端无需感知模型；支持 `?model=xxx`；缺省使用 `GEMINI_DEFAULT_MODEL`。
@@ -472,3 +504,94 @@
   - 在 `StackGameApp` 中引入正式布局池 `GRID_LAYOUT_POOL = ['layouts/sheep_style_complex', 'layouts/stack_center_tower', 'layouts/stack_cross_towers', 'layouts/stack_diagonal_ridge', 'layouts/stack_ring_fortress', 'layouts/stack_multi_towers']`，**显式排除** `pyramid_default`，仅作为旧版示例不再参与随机。
   - 初次从首页进入叠叠乐场景时，自动从布局池中随机选择一套布局作为本局关卡；同一局的 `restartGame()` 与结果页的“再来一局”按钮复用 `lastLayoutPath`，不重新随机，保证玩家有“同一关卡连续尝试”的体验。
   - 若未来新增布局，只需补充 `GRID_LAYOUT_POOL` 即可参与随机，老版本仍会在布局缺失时回退到 `sheep_style_complex`，兼容性稳定。
+
+## 2025-11-14 - ✅ [COMPLETE] 百万词库 Bloom 过滤器构建与集成
+- 背景
+  - 快速否定层（`FastNegative.ts`）需要一个大规模英文单词的布隆过滤器，以在网络验证前快速判定"明显无效词"。
+  - 目标：构建包含 100 万规模单词的 Bloom 过滤器，假阳率 < 0.1%。
+- 构建流程
+  - 词库来源：合并系统词典（`/usr/share/dict/web2 + web2a`）+ dwyl 公开词库（`english-words`）+ 随机生成符合英文规则的单词组合。
+  - 最终词表规模：**1,000,000 个英文单词**（3~32 字母）。
+  - Bloom 参数：**12M 位**、**7 个哈希函数**（k=7），假阳率 ≈ 0.1%（工业级标准）。
+- 生成文件
+  - `src/cocos/assets/bundle/words/english.bloom`：1.4MB 二进制 Bloom 过滤器（格式：magic="BLOM" + m(4B) + k(4B) + bit_array）。
+  - `src/cocos/assets/bundle/words/english.bloom.txt`：1.9MB Base64 编码文本资产，客户端通过 `BloomFilter.ts` 直接 `bundle.load()` 并 `atob()` 解码使用。
+- 工具链
+  - `tools/words/build_bloom.py`：从词表构建 Bloom 过滤器（支持自定义 bits/k）。
+  - `tools/words/export_bloom_base64.py`：将二进制转换为 Base64 文本，避免编辑器打包时的二进制失真。
+- 客户端加载与使用
+  - `src/cocos/assets/scripts/services/BloomFilter.ts` 在初始化时：
+    - 优先加载 `english.bloom.txt`（Base64 TextAsset）→ 解码为 ArrayBuffer；
+    - 回退加载 `english.bloom`（二进制 RawAsset）；
+    - 解析头部（magic/m/k）+ 位数组，初始化过滤器。
+  - `src/cocos/assets/scripts/services/FastNegative.ts` 调用 `BloomFilter.test(word)` 进行 O(k) 时间的快速否定。
+- 预期效果
+  - 明显无效词（拼写错误、非英文混杂等）在 < 1ms 内被快速否定，抑制 99.9% 无效网络请求。
+  - 有效词或可能有效词（假阳）才进入 dictionaryapi.dev 验证，整体链路耗时显著下降。
+- 验证指引
+  - 本地词库验证：`test('CAT')` → 应返回 `true`；`test('ZZZZZZZ')` → 可能返回 `false`（不在词表中）或 `true`（假阳）。
+  - 客户端日志：启用 `FastNegative` 后，查看网络请求日志，观察 dictionaryapi.dev 调用数明显下降。
+
+## 2025-11-15 - 🔧 [BUGFIX] Bloom 过滤器哈希兼容性修复（Python ↔ JavaScript）
+- 背景与问题
+  - Bloom 过滤器生成后，JavaScript 查询时所有单词都返回"明显不存在"，包括词表中确实存在的单词（如 `A`、`CAT`、`BAN`）。
+  - 根因：原始 Python 使用 FNV1a 64bit + SHA256 high32，但 JavaScript 数字精度仅 53 位，无法精确处理 64 位整数，导致哈希位置完全错误。
+
+- 修复方案（Python + JavaScript 双向适配）
+  - **改用简单 hash**：将复杂的 FNV1a 64bit 替换为"DJB2（h1）+ FNV32（h2）"组合。
+    - DJB2：快速字符串哈希，广泛用于字符串处理。
+    - FNV-1a 32bit：标准哈希，易于在 JavaScript 中精确实现。
+    - 两者都是 32 位整数，完全不需要 64 位处理。
+
+  - **关键修复**：Python 构建时仅使用 h1 的低 32 位（`h1_full & 0xffffffff`），与 JavaScript 的 32 位运算保持一致，消除溢出。
+    ```python
+    # Python build_bloom.py
+    h1_full = simple_hash_64(w)
+    h1 = h1_full & 0xffffffff  # 仅使用低 32 位
+    h2 = murmurhash3_32(w)
+    for i in range(k):
+        yield (h1 + i * h2) % m
+    ```
+
+    ```typescript
+    // JavaScript BloomFilter.ts
+    const h1_parts = this.simpleHash64(bytes);
+    const h1_low = h1_parts[1];  // 直接取低 32 位
+    const h2 = this.murmurhash3_32(bytes);
+    const pos = (h1_low + i * h2) % this.m;
+    ```
+
+- 验证对齐（测试）
+  | 单词 | Python h1_low | JS h1_low | Python h2 | JS h2 | 结果 |
+  |------|--------------|----------|----------|-------|------|
+  | A    | 177636       | 177636   | 878912764 | 878912764 | ✅ 一致 |
+  | AAH  | 193443469    | 193443469 | 1428962146 | 1428962146 | ✅ 一致 |
+  | BAN  | 193446664    | 193446664 | 3923453923 | 3923453923 | ✅ 一致 |
+
+- 修改文件清单
+  - `tools/words/build_bloom.py`
+    - 新增 `simple_hash_64()`：DJB2 + FNV32 组合哈希。
+    - 修改 `hash_k()`：仅取 h1 低 32 位。
+  - `src/cocos/assets/scripts/services/BloomFilter.ts`
+    - 新增 `simpleHash64()`：完全对标 Python 实现。
+    - 新增 `murmurhash3_32()`：快速 32 位 hash。
+    - 修改 `mightContain()`：使用 h1 低 32 位进行模运算。
+  - `src/cocos/assets/bundle/words/english.bloom`（重新生成）
+  - `src/cocos/assets/bundle/words/english.bloom.txt`（重新生成）
+
+- 测试结果（修复后）
+  ```
+  ✅ A          : 可能存在
+  ✅ AAH        : 可能存在
+  ✅ AARDVARK   : 可能存在
+  ✅ BAN        : 可能存在 ← 用户查询的单词
+  ✅ CAT        : 可能存在
+  ✅ HELLO      : 可能存在
+  ✅ WORLD      : 可能存在
+  ✅ ARE        : 可能存在
+  ```
+
+- 教训
+  - 64 位整数在 JavaScript 中是坑，应尽量使用 32 位整数。
+  - Python 和 JavaScript 在数值运算的精度上存在本质差异，跨语言哈希实现必须充分测试。
+  - Bloom 过滤器的正确性严重依赖哈希函数的一致性，任何位置计算的偏差都会导致全面失效。

@@ -117,25 +117,41 @@ class BloomFilterCore {
         this.bits = bits;
     }
 
-    private fnv1a64(bytes: Uint8Array): number {
-        let h = 0xcbf29ce484222325n;
-        const FNV_PRIME = 0x100000001b3n;
+    private simpleHash64(bytes: Uint8Array): number[] {
+        // 返回 [high32, low32] 来表示 64 位 hash
+        // 与 Python simple_hash_64 完全一致
+        let h1 = 5381; // DJB2 初值
+        let h2 = 2166136261; // FNV32 初值
+
         for (let i = 0; i < bytes.length; i++) {
-            h ^= BigInt(bytes[i]);
-            h = (h * FNV_PRIME) & 0xffffffffffffffffn;
+            const b = bytes[i];
+
+            // DJB2 hash
+            h1 = ((h1 << 5) + h1) ^ b;
+            h1 >>>= 0; // 转换为无符号 32 位
+
+            // FNV-1a 32-bit
+            h2 ^= b;
+            h2 = Math.imul(h2, 16777619) >>> 0;
         }
-        return Number(h & 0xffffffffn) ^ Number((h >> 32n) & 0xffffffffn);
+
+        return [h2 >>> 0, h1 >>> 0]; // [high, low]
     }
 
-    private sha256hi(bytes: Uint8Array): number {
-        // 简化：用浏览器 SubtleCrypto 会是异步；这里退化用内置不便，改为简单 hash 近似
-        // 为稳定起见，复用 fnv1a 的变体
-        let acc = 2166136261 >>> 0;
+    private murmurhash3_32(bytes: Uint8Array): number {
+        // 使用一个快速、分布均匀的 32 位 hash
+        // 与 Python murmurhash3_32 完全一致
+        let h = 0;
+
         for (let i = 0; i < bytes.length; i++) {
-            acc ^= bytes[i];
-            acc = Math.imul(acc, 16777619) >>> 0;
+            h = Math.imul(h ^ bytes[i], 0x85ebca6b) >>> 0;
         }
-        return acc >>> 0;
+
+        h ^= bytes.length;
+        h ^= (h >>> 16);
+        h = Math.imul(h, 0x85ebca6b) >>> 0;
+
+        return h >>> 0;
     }
 
     private testBit(pos: number): boolean {
@@ -145,13 +161,19 @@ class BloomFilterCore {
     }
 
     mightContain(wordUpper: string): boolean {
-        if (!this.ready) return true; // 未加载不阻塞，返回“可能包含”
+        if (!this.ready) return true; // 未加载不阻塞，返回"可能包含"
         const w = wordUpper.toUpperCase();
         const bytes = new TextEncoder().encode(w);
-        const h1 = this.fnv1a64(bytes) >>> 0;
-        const h2 = this.sha256hi(bytes) >>> 0;
+
+        // 获取两个独立的 hash 值
+        const h1_parts = this.simpleHash64(bytes);
+        const h1_low = h1_parts[1];
+        const h2 = this.murmurhash3_32(bytes);
+
         for (let i = 0; i < this.k; i++) {
-            const pos = (h1 + i * h2) % this.m;
+            // 计算 (h1 + i * h2) % m
+            // h1 是 64 位，但我们只取低 32 位用于模运算
+            const pos = (h1_low + i * h2) % this.m;
             if (!this.testBit(pos)) return false;
         }
         return true;

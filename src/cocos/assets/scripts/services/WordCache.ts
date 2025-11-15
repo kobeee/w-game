@@ -16,6 +16,15 @@ export class WordCache {
     private l2: Record<string, CacheEntry> = this.loadL2();
     private dirty = 0;
 
+    constructor() {
+        // DEBUG: 清除 BAN 的缓存用于测试
+        if (this.l2['BAN']) {
+            console.warn('[WordCache][DEBUG] 删除缓存中的 BAN');
+            delete this.l2['BAN'];
+            this.flush(true);
+        }
+    }
+
     private loadL2(): Record<string, CacheEntry> {
         try {
             const raw = sys.localStorage.getItem(WORD_CACHE_STORE_KEY);

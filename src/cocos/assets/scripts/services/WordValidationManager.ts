@@ -68,7 +68,7 @@ export class WordValidationManager {
     async validateConcurrent(word: string): Promise<ValidateResult> {
         const upperWord = word.toUpperCase();
 
-        // 记录“最近一次提交的单词”（维持对外API兼容）
+        // 记录"最近一次提交的单词"（维持对外API兼容）
         this.pendingValidation = {
             word: upperWord,
             state: 'validating',
