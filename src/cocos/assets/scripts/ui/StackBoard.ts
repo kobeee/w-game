@@ -23,6 +23,7 @@ export class StackBoard extends Component {
 
     private cards: Card[] = [];
     private tileNodes: Map<string, Node> = new Map();
+    private removingCards: Set<string> = new Set();  // ✅ 追踪正在移除的卡片
 
     /**
      * ✅ 新增：在onLoad中初始化SlotQueue引用
@@ -143,15 +144,18 @@ export class StackBoard extends Component {
         BlockDetector.updateAllBlockStatus(this.cards);
 
         for (const card of this.cards) {
+            // ✅ 修复：跳过正在移除和已移除的卡片，避免改变飞行中卡片的状态
+            if (card.removed || this.removingCards.has(card.id)) {
+                continue;
+            }
+
             const tileNode = this.tileNodes.get(card.id);
             if (!tileNode) continue;
 
             const tile = tileNode.getComponent(LetterTile);
             if (!tile) continue;
 
-            if (card.removed) {
-                tileNode.active = false;
-            } else if (card.blocked) {
+            if (card.blocked) {
                 tile.setState('disabled');
             } else {
                 tile.setState('selectable');
@@ -204,8 +208,9 @@ export class StackBoard extends Component {
             tile.setState('highlight');
         }
 
-        // 标记为已移除
-        card.removed = true;
+        // ✅ 修复：标记为"正在移除"而非"已移除"
+        // 避免在飞行动画中被 updateBlockStatus() 改变状态
+        this.removingCards.add(cardId);
 
         // ✅ 新增：提升z-index确保飞行时在最上层
         // 临时提升siblingIndex到最大值，确保飞行中的卡片不被任何节点遮挡
@@ -215,7 +220,7 @@ export class StackBoard extends Component {
         // ✅ 新增：获取目标slot的缩放比例
         const targetScale = this.slotQueue ? this.slotQueue.getCurrentScale() : 1.0;
 
-        
+
 
         // 飞向牌槽动画
         return new Promise<Node>((resolve) => {
@@ -225,6 +230,10 @@ export class StackBoard extends Component {
                 .call(() => {
                     // ✅ 注释：不需要恢复originalIndex，因为节点即将被转移到SlotQueue
                     // tileNode.setSiblingIndex(originalIndex);
+
+                    // ✅ 修复：现在再标记为"已移除"
+                    card.removed = true;
+                    this.removingCards.delete(cardId);
 
                     // 从映射表中移除（因为节点将被转移到SlotQueue）
                     this.tileNodes.delete(cardId);
@@ -253,6 +262,7 @@ export class StackBoard extends Component {
         }
 
         this.tileNodes.clear();
+        this.removingCards.clear();  // ✅ 修复：清理正在移除的卡片集合
         this.cards = [];
     }
 

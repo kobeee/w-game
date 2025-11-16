@@ -2,6 +2,46 @@
 
 > 归档说明：完整历史已复制到 `docs/archive/CHANGELOG-ARCHIVE.md`，本文件仅保留最近且重要的变更。
 
+## 2025-11-16 - 🔧 [BUGFIX] 快速连续点击卡片消失 Bug 修复（竞态条件）
+
+### 问题现象
+- 在叠叠乐场景中快速连续点击多张卡片时，第二个及后续卡片会诡异地突然消失
+- 虽然 Tween 动画还在执行，但卡片视觉上已不可见
+
+### 根本原因
+**竞态条件（Race Condition）在 `StackBoard.removeCard()` 方法中**：
+- `card.removed = true` 在动画开始时立即执行（L208）
+- 但 `tileNodes.delete()` 要等 0.4 秒后才执行（L236）
+- 这 0.4 秒窗口期内，多个 `updateBlockStatus()` 调用会并发执行
+- 导致飞行中的卡片被强制设为 `active=false` 或错误的状态
+
+### 关键问题点
+1. `updateBlockStatus()` 无差别地更新所有卡片，包括还在飞行中的卡片
+2. 缺少"正在移除"的状态追踪，无法区分"已标记移除但还在飞行"和"完全移除"
+3. 当快速点击时，多个 Tween 回调的 `updateBlockStatus()` 相互干扰
+
+### 修复方案
+引入 `removingCards: Set<string>` 追踪正在移除的卡片：
+- 点击卡片时：`removingCards.add(cardId)` 标记为"正在移除"
+- Tween 完成时：`card.removed = true` + `removingCards.delete(cardId)` 完成移除
+- `updateBlockStatus()` 跳过所有 `removed` 和 `removingCards` 中的卡片
+- 确保飞行中的卡片状态不会被中途改变
+
+### 修改文件
+- `src/cocos/assets/scripts/ui/StackBoard.ts`
+  - L26：新增 `private removingCards: Set<string> = new Set()`
+  - L148：`updateBlockStatus()` 跳过正在移除的卡片
+  - L209-210：点击时标记为"正在移除"
+  - L231-232：Tween 完成时更新状态
+  - L256：`clear()` 时清理 `removingCards`
+
+### 测试脚本
+- `scripts/debug_rapid_click_bug.js` - 快速点击场景复现与分析
+- `scripts/analyze_update_block_status.js` - 深度分析竞态条件
+- `scripts/BUG_REPORT.md` - 完整问题分析报告
+
+---
+
 ## 2025-11-15 - 🔧 [BUGFIX] 生词本缓存读写彻底修复（localStorage 同步问题）
 
 ### 背景
