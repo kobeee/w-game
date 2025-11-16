@@ -50,7 +50,8 @@ docker-compose up -d
 - **场景文件**: `src/cocos/assets/scenes/` (Boot → Menu → Game/StackGameScene → Result)
 - **远程资源**: `tools/remote-resources/remote/` (Bundle 资源部署目录)
 - **词库数据**: `src/cocos/assets/resources/words/words_core.json`
-- **Cloudflare Worker**: `tools/cloudflare/worker.js` (Gemini API 代理、密钥注入、边缘缓存)
+- **Cloudflare Worker**: `tools/cloudflare/worker.js` (RSA 加密、请求转发、边缘缓存)
+- **后端服务**: `src/backend/` (FastAPI、Gemini 调用、单词验证)
 - **开发日志**: `CHANGELOG.md` (末尾为最新记录)
 
 ### 快速找代码
@@ -61,8 +62,9 @@ docker-compose up -d
 | 叠叠乐 | `src/cocos/.../StackGameApp.ts` + `StackBoard.ts` | 堆叠消除、关卡递增 |
 | 字符匹配 | `src/cocos/.../core/WordMatcher.ts` | 后缀验证算法（ABCD → BCD → CD） |
 | 词汇服务 | `src/cocos/.../data/GlossService.ts` | 词库加载、生词本管理 |
-| 网络验证 | `src/cocos/.../services/NetworkService.ts` | Gemini 调用、会话缓存、单飞去重 |
-| Worker 代理 | `tools/cloudflare/worker.js` | Gemini API 代理、密钥注入、边缘缓存 |
+| 网络验证 | `src/cocos/.../services/NetworkService.ts` | 后端请求、会话缓存、单飞去重 |
+| Worker 加密转发 | `tools/cloudflare/worker.js` | RSA 加密、请求转发、边缘缓存 |
+| 后端验证 | `src/backend/word_validator.py` | Gemini 调用、单词验证、防重放检查 |
 
 ## 项目概述
 
@@ -90,9 +92,15 @@ V0.1 已完成核心离线单机版，V0.2+ 接入后端单词验证、排行榜
   - `assets/ui/` - UI资源（按钮、背景、图标等）
 
 ### 后端和边缘计算
-- **Cloudflare Worker**（当前使用）：Gemini API 代理、密钥注入、边缘缓存
-- **Python FastAPI**（档案用）：`src/backend/` 目录保留历史代码，当前不使用
-- **词库验证**：全量走 Gemini（通过 Cloudflare Worker），本地 JSON 词库作备选
+- **Cloudflare Worker**（边缘层）：RSA-OAEP 加密、请求转发、边缘缓存
+  - 负责客户端请求的 RSA-2048 公钥加密
+  - 转发加密请求到海外后端服务
+  - 边缘缓存单词验证结果
+- **Python FastAPI 后端**（海外部署，当前活跃）：`src/backend/`
+  - 负责 RSA 解密、Nonce 防重放、时间戳校验
+  - 调用 Gemini API（规避地理位置限制）
+  - 单词验证结果缓存与响应标准化
+- **词库验证流程**：客户端 → Worker（RSA 加密）→ 后端（Gemini 调用 + 缓存）
 
 ## 核心架构设计
 
@@ -356,8 +364,8 @@ GameApp.onCorrectAnswer()
 - **不依赖外部库**: 仅用 Cocos Creator 原生 API
 - **微信小游戏兼容**: 避免 ES2017+ 语法（如 `padStart`）
 - **包体积控制**: 本地包体 < 4MB（远程 Bundle 分离）
-- **零密钥暴露**: Gemini API Key 仅在 Worker 中存储，客户端无感知
-- **无后端依赖**: 仅通过 Worker 代理访问 Gemini，无本地后端服务
+- **零密钥暴露**: Gemini API Key 仅在后端存储，客户端无感知
+- **加密传输**: 客户端 → Worker 走 RSA-OAEP 加密，规避地理限制
 
 ---
 
