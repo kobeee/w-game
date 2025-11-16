@@ -195,30 +195,68 @@ export class GlossService {
      */
     explain(word: string): string | null {
         const upperWord = word.toUpperCase();
+
+        // 步骤1：查本地词库
         const local = this.glossDict.get(upperWord);
         if (local && typeof local === 'string' && local.trim().length > 0) {
             console.info('[GlossService][local]', { word: upperWord, zh: local });
             return local;
         }
-        // 回退：从 L2 持久化缓存读取（与 WordCache/NetworkService 保存一致）
+
+        // 步骤2：回退到 L2 持久化缓存读取（与 WordCache/NetworkService 保存一致）
         try {
             const raw = sys.localStorage.getItem('wgame_word_cache_v2');
-            if (raw) {
-                const obj = JSON.parse(raw);
-                const e = obj && obj[upperWord];
-                if (e && typeof e === 'object') {
-                    // e: { v: boolean, de?: string, dz?: string, t: number, e: number }
-                    if (e.dz && typeof e.dz === 'string' && e.e > Date.now()) {
-                        console.info('[GlossService][l2-hit]', { word: upperWord, zh: e.dz });
-                        return e.dz as string;
-                    }
-                }
+            if (!raw) {
+                console.debug(`[GlossService][l2-empty] 未找到缓存键: wgame_word_cache_v2`);
+                console.info('[GlossService][miss]', { word: upperWord });
+                return null;
             }
-        } catch {
-            // ignore
+
+            const obj = JSON.parse(raw);
+            if (!obj || typeof obj !== 'object') {
+                console.debug(`[GlossService][l2-invalid] 缓存数据格式错误, 类型: ${typeof obj}`);
+                console.info('[GlossService][miss]', { word: upperWord });
+                return null;
+            }
+
+            // ✅ 检查缓存中是否存在该单词
+            if (!(upperWord in obj)) {
+                console.debug(`[GlossService][l2-not-found] 单词不在 L2 缓存中: ${upperWord}`);
+                console.debug(`[GlossService][l2-keys] 缓存中的单词列表: ${Object.keys(obj).slice(0, 10).join(', ')}...`);
+                console.info('[GlossService][miss]', { word: upperWord });
+                return null;
+            }
+
+            const e = obj[upperWord];
+            if (!e || typeof e !== 'object') {
+                console.debug(`[GlossService][l2-invalid-entry] 缓存条目格式错误, 类型: ${typeof e}`);
+                console.info('[GlossService][miss]', { word: upperWord });
+                return null;
+            }
+
+            // ✅ 检查过期时间
+            const now = Date.now();
+            if (!e.e || e.e <= now) {
+                console.debug(`[GlossService][l2-expired] 缓存已过期: ${e.e} <= ${now}`);
+                console.info('[GlossService][miss]', { word: upperWord });
+                return null;
+            }
+
+            // ✅ 检查是否有中文释义
+            if (!e.dz || typeof e.dz !== 'string') {
+                console.debug(`[GlossService][l2-no-definition] 缓存中无中文释义字段: dz=${e.dz}`);
+                console.info('[GlossService][miss]', { word: upperWord });
+                return null;
+            }
+
+            // ✅ 成功命中！
+            console.info('[GlossService][l2-hit]', { word: upperWord, zh: e.dz });
+            return e.dz as string;
+        } catch (error) {
+            console.error(`[GlossService][l2-error] 读取 L2 缓存失败:`, error);
+            console.info('[GlossService][miss]', { word: upperWord });
+            return null;
         }
-        console.info('[GlossService][miss]', { word: upperWord });
-        return null;
     }
 
     /**

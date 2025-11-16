@@ -445,7 +445,9 @@ export class NetworkService {
                     e: now2 + ttl
                 };
                 NetworkService.l2DirtyCount++;
-                NetworkService.flushL2IfNeeded(false);
+                // ✅ 关键修复：验证结果立即 flush 到 localStorage，不延迟
+                // 原因：GlossService.explain() 需要立即读到持久化缓存
+                NetworkService.flushL2IfNeeded(true);
 
                 if (isValid) {
                     return {

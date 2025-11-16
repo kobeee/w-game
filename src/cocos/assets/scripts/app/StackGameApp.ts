@@ -625,56 +625,33 @@ export class StackGameApp extends Component {
         // 播放消除动画
         this.slotQueue.removeWord(match);
 
-		// 记录消除的单词
-        try {
-            const glossService = GlossService.getInstance();
-            const def = glossService.explain(match.word) || '';
-            const scoreDelta = this.calculateScore(match.word);
-            this.wordsCleared.push({
-                word: match.word,
-                valid: true,
-                scoreDelta,
-                definition: def,
-                clearedAtMs: Date.now()
-            });
-            this.longestWordLen = Math.max(this.longestWordLen, match.word.length);
+		// 记录消除的单词并获取释义
+        const glossService = GlossService.getInstance();
+        // ✅ 关键修复：直接调用 explain()，因为 NetworkService 已经立即 flush 到 localStorage
+        const def = glossService.explain(match.word) || '';
+        const scoreDelta = this.calculateScore(match.word);
 
-            // 展示释义气泡（定位到匹配区中心）
-			const centerIdx = Math.floor((match.startIdx + match.endIdx) / 2);
-			const centerPos = (this.slotQueue as any).getSlotWorldPosition
-				? (this.slotQueue as any).getSlotWorldPosition(centerIdx)
-				: null;
-			const fallbackPos = this.slotQueue.getNextSlotWorldPosition();
-			const worldPos = centerPos || fallbackPos || this.slotQueue.node.getWorldPosition();
-			this.showDefinitionHint(match.word, def, worldPos);
-        } catch (_) {
-            const scoreDelta = this.calculateScore(match.word);
-            this.wordsCleared.push({
-                word: match.word,
-                valid: true,
-                scoreDelta,
-                definition: '',
-                clearedAtMs: Date.now()
-            });
-            this.longestWordLen = Math.max(this.longestWordLen, match.word.length);
+        this.wordsCleared.push({
+            word: match.word,
+            valid: true,
+            scoreDelta,
+            definition: def,
+            clearedAtMs: Date.now()
+        });
+        this.longestWordLen = Math.max(this.longestWordLen, match.word.length);
 
-            // 即使无本地释义也展示占位提示
-			const centerIdx = Math.floor((match.startIdx + match.endIdx) / 2);
-			const centerPos = (this.slotQueue as any).getSlotWorldPosition
-				? (this.slotQueue as any).getSlotWorldPosition(centerIdx)
-				: null;
-			const fallbackPos = this.slotQueue.getNextSlotWorldPosition();
-			const worldPos = centerPos || fallbackPos || this.slotQueue.node.getWorldPosition();
-			this.showDefinitionHint(match.word, '', worldPos);
-        }
+        // 展示释义气泡（定位到匹配区中心）
+		const centerIdx = Math.floor((match.startIdx + match.endIdx) / 2);
+		const centerPos = (this.slotQueue as any).getSlotWorldPosition
+			? (this.slotQueue as any).getSlotWorldPosition(centerIdx)
+			: null;
+		const fallbackPos = this.slotQueue.getNextSlotWorldPosition();
+		const worldPos = centerPos || fallbackPos || this.slotQueue.node.getWorldPosition();
+		this.showDefinitionHint(match.word, def, worldPos);
 
         // 计算分数
         const wordScore = this.calculateScore(match.word);
         this.score += wordScore;
-
-        
-        // 查询词义并显示
-        this.showWordMeaning(match.word);
 
         // 清除当前匹配
         this.currentMatch = null;
@@ -688,7 +665,7 @@ export class StackGameApp extends Component {
 
         // 检查游戏是否结束
         this.checkGameEnd();
-        // 如果曾记录“槽满等待结束”，但现在已不满，清空该标记（不影响 NO_TILES 判定）
+        // 如果曾记录"槽满等待结束"，但现在已不满，清空该标记（不影响 NO_TILES 判定）
         if (this.pendingEndReason === 'SLOTS_FILLED' && !this.slotQueue.isFull()) {
             this.pendingEndReason = null;
         }
