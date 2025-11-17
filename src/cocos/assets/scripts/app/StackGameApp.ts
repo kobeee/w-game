@@ -81,7 +81,7 @@ export class StackGameApp extends Component {
     public definitionHintsRoot: Node = null!;
 
     private currentLevel: Level | null = null;
-    private wordMatcher: IWordMatcher | null = null; // ✅ 延迟初始化，确保GlossService已加载
+    private wordMatcher: IWordMatcher | null = null; // 延迟初始化，确保GlossService已加载
     private gameState: GameState = GameState.IDLE;
     private score: number = 0;
     private wordsCleared: WordStat[] = [];
@@ -93,12 +93,18 @@ export class StackGameApp extends Component {
     /**
      * 输入推进版本号：
      * - 每次牌槽内容变化（增加/移除）或玩家继续输入时自增
-     * - 用于丢弃“输入推进后才返回的旧验证结果”，避免误触发消除
+     * - 用于丢弃"输入推进后才返回的旧验证结果"，避免误触发消除
      */
     private inputVersion: number = 0;
+    /**
+     * 新增：命中单词的状态管理（防止消除两次）
+     * 保存当前闪烁中单词的匹配状态，包含版本号以防止过期操作
+     */
+    private currentMatchState: { match: WordMatch; version: number; state: 'pending' | 'removing' | 'removed' } | null = null;
     // 正在进行的网络后缀验证批次数（用于“槽满时延迟结束”判断）
     private validationsInFlight: number = 0;
-    // 延迟结束原因（例如槽满时先等待验证结果）
+    // 防止旧的auto-remove事件在新匹配后触发的标记
+    private autoRemoveVersion: number = 0;    // 延迟结束原因（例如槽满时先等待验证结果）
     private pendingEndReason: string | null = null;
     // 当前局使用的布局路径（resources/ 下的相对路径，不带扩展名）
     private lastLayoutPath: string | null = null;
@@ -118,7 +124,7 @@ export class StackGameApp extends Component {
         try {
             await this.validationManager.initialize();
         } catch (error) {
-            console.error('[StackGameApp] ⚠️ 单词验证系统初始化失败:', error);
+            console.error('[StackGameApp] 单词验证系统初始化失败:', error);
         }
 
         // 降级方案：如果词库未加载（直接预览Game场景时），执行加载
@@ -126,21 +132,21 @@ export class StackGameApp extends Component {
         const loadStatus = glossService.getLoadStatus();
 
         if (!loadStatus.core) {
-            console.warn('[StackGameApp] ⚠️ 词库未加载，执行降级加载...');
+            console.warn('[StackGameApp] 词库未加载，执行降级加载...');
             try {
                 await glossService.load(false); // 仅加载核心词库
             } catch (error) {
-                console.error('[StackGameApp] ❌ 词库降级加载失败:', error);
+                console.error('[StackGameApp] 词库降级加载失败:', error);
             }
         }
 
-        // ✅ 延迟初始化单词匹配器到 startGame()（此时GlossService已加载完成）
+        // 延迟初始化单词匹配器到 startGame()（此时GlossService已加载完成）
         // this.initWordMatcher();
 
         // 加载远程资源
         await this.loadRemoteAssets();
 
-        // ✅ 修复：确保SlotQueue容器始终在最上层，避免遮挡飞行中的卡片
+        // 修复：确保SlotQueue容器始终在最上层，避免遮挡飞行中的卡片
         if (this.slotQueue && this.slotQueue.node) {
             this.slotQueue.node.setSiblingIndex(9998); // SlotQueue在底层
         }
@@ -177,7 +183,7 @@ export class StackGameApp extends Component {
             if (foundButton) {
                 this.endGameButton = foundButton;
             } else {
-                console.error('[StackGameApp] ❌ 无法找到 EndGameButton 节点');
+                console.error('[StackGameApp] 无法找到 EndGameButton 节点');
             }
         }
         
@@ -199,10 +205,10 @@ export class StackGameApp extends Component {
     }
 
     protected async start(): Promise<void> {
-        // ✅ 确保词库加载完成后再开始游戏
+        // 确保词库加载完成后再开始游戏
         const glossService = GlossService.getInstance();
 
-        // ⚠️ 关键：无论 onLoad() 中是否已经开始加载，这里都再次调用 load()
+        // 关键：无论 onLoad() 中是否已经开始加载，这里都再次调用 load()
         // load() 方法内部会处理并发控制，如果已经在加载，会等待完成
         try {
             await glossService.load(false);
@@ -289,12 +295,12 @@ export class StackGameApp extends Component {
             let allWords = glossService.getAllWords();
 
             if (allWords.length === 0) {
-                console.warn('[StackGameApp] ⚠️ 词库为空，检查加载状态');
+                console.warn('[StackGameApp] 词库为空，检查加载状态');
 
                 const loadStatus = glossService.getLoadStatus();
 
                 if (!loadStatus.core) {
-                    console.error('[StackGameApp] ❌ 核心词库未加载，WordMatcher 初始化失败');
+                    console.error('[StackGameApp] 核心词库未加载，WordMatcher 初始化失败');
                 }
             }
 
@@ -302,7 +308,7 @@ export class StackGameApp extends Component {
             this.wordMatcher = new IncrementalWordMatcher(glossService);
 
         } catch (error) {
-            console.error('[StackGameApp] ❌ 单词匹配器初始化失败:', error);
+            console.error('[StackGameApp] 单词匹配器初始化失败:', error);
             // 降级方案：创建一个默认的匹配器
             this.wordMatcher = new IncrementalWordMatcher();
         }
@@ -341,7 +347,7 @@ export class StackGameApp extends Component {
         useGridLayout: boolean = true,
         layoutPath?: string
     ): Promise<void> {
-        // ✅ 在游戏真正开始时初始化WordMatcher（此时GlossService已加载）
+        // 在游戏真正开始时初始化WordMatcher（此时GlossService已加载）
         if (!this.wordMatcher) {
             this.initWordMatcher();
         }
@@ -353,7 +359,7 @@ export class StackGameApp extends Component {
 
         try {
             if (useGridLayout) {
-                // ✅ 使用网格布局系统
+                // 使用网格布局系统
 
                 // 获取词库（用于分配字母）
                 const glossService = GlossService.getInstance();
@@ -374,13 +380,13 @@ export class StackGameApp extends Component {
                 );
 
             } else {
-                // ✅ 使用旧的随机生成系统
+                // 使用旧的随机生成系统
                 this.currentLevel = LevelGenerator.generateDailyLevel(dailySeed);
             }
 
             // 初始化组件（异步等待SlotQueue加载完成）
             this.stackBoard.init(this.currentLevel);
-            await this.slotQueue.init(); // ✅ 等待牌槽初始化完成（包括背景图加载）
+            await this.slotQueue.init(); // 等待牌槽初始化完成（包括背景图加载）
 
             // 重置数据
             this.score = 0;
@@ -451,11 +457,10 @@ export class StackGameApp extends Component {
             const currentLetters = this.slotQueue.getLetters();
             const currentWord = currentLetters.join('');
 
-            // ✅ 网络验证后缀（MABAN → 验证 MABAN/ABAN/BAN）
+            // 网络验证后缀（MABAN → 验证 MABAN/ABAN/BAN）
             if (currentWord.length >= 3) {
-                // 自增输入版本号，并将快照传入验证批次
-                const ver = ++this.inputVersion;
-                this.validateSuffixes(currentLetters, ver);
+                // 记录发起验证时的版本号快照
+                this.validateSuffixes(currentLetters, this.inputVersion);
             }
         });
     }
@@ -463,11 +468,10 @@ export class StackGameApp extends Component {
     /**
      * 并发验证所有后缀（MABAN → 并发验证 MABAN/ABAN/BAN），取最长匹配
      */
-    private validateSuffixes(letters: string[], versionSnapshot?: number): void {
-        // 记录发起时的版本号（若未显式传入，则取当前版本的快照）
-        const versionAtDispatch = (typeof versionSnapshot === 'number') ? versionSnapshot : this.inputVersion;
+    private validateSuffixes(letters: string[], versionAtDispatch: number): void {
+        // 记录发起时的版本号，用于判断验证期间是否有新输入
         const totalLen = letters.length;
-        const suffixPromises: Array<Promise<{ suffix: string; startIdx: number; valid: boolean }>> = [];
+        const suffixPromises: Array<Promise<{ suffix: string; startIdx: number; valid: boolean; length: number }>> = [];
         // 标记本批次开始
         this.validationsInFlight++;
 
@@ -480,12 +484,14 @@ export class StackGameApp extends Component {
                 .then(result => ({
                     suffix,
                     startIdx: leftCut,
-                    valid: !!(result && result.valid)
+                    valid: !!(result && result.valid),
+                    length: suffix.length  // 添加 length，用于排序
                 }))
                 .catch(() => ({
                     suffix,
                     startIdx: leftCut,
-                    valid: false
+                    valid: false,
+                    length: suffix.length  // 添加 length
                 }));
 
             suffixPromises.push(promise);
@@ -493,27 +499,56 @@ export class StackGameApp extends Component {
 
         // 等待所有验证完成，取最长的valid=true后缀
         Promise.all(suffixPromises).then(results => {
-            // 若期间输入已推进（版本号变化），丢弃本批次结果
+            // 版本号检查
             if (versionAtDispatch !== this.inputVersion) {
-                // 本批次作废，同时减少计数
+                // 版本号不匹配，丢弃验证结果
                 this.validationsInFlight = Math.max(0, this.validationsInFlight - 1);
                 return;
             }
-            // 从长到短找第一个valid=true
-            const validMatch = results.find(r => r.valid);
 
-            if (validMatch && this.gameState === GameState.PLAYING) {
-                const networkMatch = {
-                    word: validMatch.suffix,
+            // 确保排序字段正确
+            const sorted = [...results].sort((a, b) => {
+                // 优先按长度降序
+                if (b.length !== a.length) {
+                    return b.length - a.length;
+                }
+                // 长度相同时，有效的优先
+                if (a.valid !== b.valid) {
+                    return a.valid ? -1 : 1;
+                }
+                return 0;
+            });
+
+            const validMatch = sorted.find(r => r.valid);
+
+            
+            // 修复：即使当前在BLINKING状态，也要检查是否需要更新
+            if (validMatch) {
+                const word = validMatch.suffix;
+
+                // 如果已经在闪烁，先停止旧的
+                if (this.gameState === GameState.BLINKING && this.currentMatch) {
+                    this.slotQueue.stopBlink();
+                }
+
+                this.currentMatch = {
+                    word: word,
                     startIdx: validMatch.startIdx,
                     endIdx: totalLen - 1,
-                    length: validMatch.suffix.length
+                    length: validMatch.length
                 };
 
-                this.currentMatch = networkMatch;
+                this.currentMatchState = {
+                    match: this.currentMatch,
+                    version: versionAtDispatch,
+                    state: 'pending'
+                };
                 this.gameState = GameState.BLINKING;
-                this.slotQueue.startBlink(networkMatch);
+                this.slotQueue.startBlink(this.currentMatch);
             }
+
+            this.validationsInFlight = Math.max(0, this.validationsInFlight - 1);
+            // 更新validationsInFlight计数
         })
         .catch(() => null)
         .then(() => {
@@ -540,43 +575,60 @@ export class StackGameApp extends Component {
      * 字母添加到牌槽后回调
      */
     private onLetterAdded(letters: string[]): void {
-        // 任意新字母加入即视为“输入推进”，自增版本号
+        // 任意新字母加入即视为"输入推进"，自增版本号
         this.inputVersion++;
 
-        // 新输入发生时，取消旧的闪烁与自动消除倒计时，避免误消除旧匹配
+        // 关键修复：不要立即清除闪烁
+        // 等待网络验证完成后再决定是否清除
+        // 这样可以避免BASK被立即消除的问题
         if (this.gameState === GameState.BLINKING) {
-            this.slotQueue.stopBlink();
-            this.currentMatch = null;
-            this.gameState = GameState.PLAYING;
+            // 不立即清除，等待网络验证完成
+            // this.slotQueue.stopBlink();
+            // this.currentMatch = null;
+            // this.currentMatchState = null;
+            // this.gameState = GameState.PLAYING;
         }
 
-        // ✅ 防御性检查：WordMatcher是否存在
+        // 防御性检查：WordMatcher是否存在
         if (!this.wordMatcher) {
-            console.warn('[StackGameApp] ⚠️ WordMatcher 未初始化，尝试重新初始化');
+            console.warn('[StackGameApp] WordMatcher 未初始化，尝试重新初始化');
             this.initWordMatcher();
 
             // 再次检查
             if (!this.wordMatcher) {
-                console.error('[StackGameApp] ❌ WordMatcher 初始化失败，无法检测单词');
+                console.error('[StackGameApp] WordMatcher 初始化失败，无法检测单词');
                 return;
             }
         }
 
-        // ✅ 检测单词
-        const match = this.wordMatcher.findWord(letters);
+        // 修复点 1：更严格的守卫条件
+        const shouldLocalValidate = (
+            this.validationsInFlight === 0 &&
+            this.gameState === GameState.PLAYING &&
+            letters.length >= 3
+        );
 
-        if (match) {
-            // 保存当前匹配
-            this.currentMatch = match;
+        if (shouldLocalValidate) {
+            const match = this.wordMatcher.findWord(letters);
+            if (match) {
+                // 保存当前匹配
+                this.currentMatch = match;
+                // 新增：保存匹配状态（本地检测也需要状态管理）
+                this.currentMatchState = {
+                    match: match,
+                    version: this.inputVersion,
+                    state: 'pending'
+                };
 
-            // 切换到闪烁状态
-            this.gameState = GameState.BLINKING;
+                // 切换到闪烁状态
+                this.gameState = GameState.BLINKING;
 
-            // 触发闪烁动画
-            this.slotQueue.startBlink(match);
+                // 触发闪烁动画
+                this.slotQueue.startBlink(match);
+            }
         }
 
-        // ✅ 新增：当牌源耗尽（所有字母卡都已点击进入槽位）时，也需要结束游戏（即便槽未满）
+        // 新增：当牌源耗尽（所有字母卡都已点击进入槽位）时，也需要结束游戏（即便槽未满）
         const remaining = this.stackBoard.getRemainingCount();
         if (remaining === 0) {
             // 若当前存在闪烁或网络验证在进行，则记录延迟结束原因，待验证结束/闪烁结束后再结算
@@ -601,9 +653,11 @@ export class StackGameApp extends Component {
      * "⏭继续拼"按钮点击
      */
     private onContinueSpell(): void {
-        
+
         // 清除当前匹配
         this.currentMatch = null;
+        // 清除匹配状态
+        this.currentMatchState = null;
 
         // 恢复游戏状态
         this.gameState = GameState.PLAYING;
@@ -622,12 +676,28 @@ export class StackGameApp extends Component {
      * 消除单词
      */
     private removeWord(match: WordMatch): void {
+        // 防御性检查：确保这个匹配还没被消除过
+        if (!this.currentMatchState || this.currentMatchState.state !== 'pending') {
+            console.warn('[StackGameApp] 尝试消除已消除或无效的匹配:', match.word);
+            return;
+        }
+
+        // 版本号检查：防止过期的消除操作（输入推进后的旧操作）
+        if (this.currentMatchState.version !== this.inputVersion) {
+            console.warn('[StackGameApp] 版本号不匹配，忽略过期的消除操作:', match.word,
+                         'matchVersion=', this.currentMatchState.version, 'currentVersion=', this.inputVersion);
+            return;
+        }
+
+        // 标记状态为 'removing'
+        this.currentMatchState.state = 'removing';
+
         // 播放消除动画
         this.slotQueue.removeWord(match);
 
 		// 记录消除的单词并获取释义
         const glossService = GlossService.getInstance();
-        // ✅ 关键修复：直接调用 explain()，因为 NetworkService 已经立即 flush 到 localStorage
+        // 关键修复：直接调用 explain()，因为 NetworkService 已经立即 flush 到 localStorage
         const def = glossService.explain(match.word) || '';
         const scoreDelta = this.calculateScore(match.word);
 
@@ -655,6 +725,10 @@ export class StackGameApp extends Component {
 
         // 清除当前匹配
         this.currentMatch = null;
+        // 标记匹配状态为已完成移除
+        if (this.currentMatchState) {
+            this.currentMatchState.state = 'removed';
+        }
 
         // 恢复游戏状态
         this.gameState = GameState.PLAYING;
@@ -710,17 +784,17 @@ export class StackGameApp extends Component {
         try {
             const glossService = GlossService.getInstance();
 
-            // ✅ 修复：使用正确的方法名 explain()
+            // 修复：使用正确的方法名 explain()
             const cnMeaning = glossService.explain(word);
 
             if (cnMeaning) {
                 // TODO: 显示词义浮层（需要GlossSheet组件）
                 // 可以调用 GlossSheet 显示词义
             } else {
-                console.warn(`[StackGameApp] ⚠️ 未找到词义: ${word}`);
+                console.warn(`[StackGameApp] 未找到词义: ${word}`);
             }
         } catch (error) {
-            console.error(`[StackGameApp] ❌ 查询词义失败: ${word}`, error);
+            console.error(`[StackGameApp] 查询词义失败: ${word}`, error);
         }
     }
 
@@ -767,7 +841,7 @@ export class StackGameApp extends Component {
         if (!this.resultPanel) return;
 
         this.resultPanel.active = true;
-        // ✅ 确保结果面板渲染在最顶层，避免被字母卡片/槽位遮挡
+        // 确保结果面板渲染在最顶层，避免被字母卡片/槽位遮挡
         if (this.resultPanel.parent && this.resultPanel.parent.isValid) {
             const parent = this.resultPanel.parent;
             const topIndex = parent.children.length - 1;
@@ -924,7 +998,7 @@ export class StackGameApp extends Component {
             const isCached = assetLoader.isAssetCached('bg', 'game_scene_bg/spriteFrame');
 
             if (!isCached) {
-                console.warn('[StackGameApp] ⚠️ 场景背景图未预加载，开始动态加载');
+                console.warn('[StackGameApp] 场景背景图未预加载，开始动态加载');
             }
 
             // 使用AssetLoader从缓存获取（已完全加载，立即可用）
@@ -967,19 +1041,19 @@ export class StackGameApp extends Component {
 
     private setupEndGameButton(): void {
         if (!this.endGameButton) {
-            console.warn('[StackGameApp] ⚠️ endGameButton 未绑定，结束按钮功能不可用');
+            console.warn('[StackGameApp] endGameButton 未绑定，结束按钮功能不可用');
             return;
         }
 
         if (!this.endGameButton.node) {
-            console.error('[StackGameApp] ❌ endGameButton.node 为空');
+            console.error('[StackGameApp] endGameButton.node 为空');
             return;
         }
 
         // 检查按钮组件是否存在
         const buttonComponent = this.endGameButton.node.getComponent(Button);
         if (!buttonComponent) {
-            console.error('[StackGameApp] ❌ EndGameButton 节点缺少 Button 组件！请在编辑器中为该节点添加 Button 组件');
+            console.error('[StackGameApp] EndGameButton 节点缺少 Button 组件！请在编辑器中为该节点添加 Button 组件');
             return;
         }
 
@@ -987,7 +1061,7 @@ export class StackGameApp extends Component {
         let currentNode: Node | null = this.endGameButton.node.parent;
         while (currentNode) {
             if (!currentNode.active) {
-                console.error(`[StackGameApp] ❌ 父节点 "${currentNode.name}" 未激活，这会导致按钮无法点击！`);
+                console.error(`[StackGameApp] 父节点 "${currentNode.name}" 未激活，这会导致按钮无法点击！`);
             }
             currentNode = currentNode.parent;
         }

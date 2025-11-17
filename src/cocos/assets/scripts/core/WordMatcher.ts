@@ -58,7 +58,7 @@ export class IncrementalWordMatcher implements IWordMatcher {
         
 
         if (this.wordBank.size === 0) {
-            console.error('[WordMatcher] ❌ 警告：词库为空！');
+            console.error('[WordMatcher] 警告：词库为空！');
             console.error('[WordMatcher] 可能原因：GlossService 未加载或加载失败');
         } else {
             // 打印词库样本（前10个单词）
@@ -104,16 +104,19 @@ export class IncrementalWordMatcher implements IWordMatcher {
         const totalLen = currentStr.length;
 
         // 从长到短检测（优先匹配长单词）
+        // 这个逻辑已经是按长度降序，第一个匹配的就是最长的
         for (let len = Math.min(totalLen, 15); len >= 3; len--) {
             const substr = currentStr.slice(-len); // 右侧len个字母
 
             if (this.wordBank.has(substr)) {
-                return {
+                const match = {
                     word: substr,
                     startIdx: totalLen - len,
                     endIdx: totalLen - 1,
                     length: len
                 };
+                
+                return match;
             }
         }
 
@@ -129,18 +132,24 @@ export class IncrementalWordMatcher implements IWordMatcher {
      */
     private fullCheck(letters: string[]): WordMatch | null {
         const totalLen = letters.length;
+        let longestMatch: WordMatch | null = null;
 
         // 从完整牌槽开始，逐步去掉最左侧字母
         for (let leftCut = 0; leftCut <= totalLen - 3; leftCut++) {
             const substr = letters.slice(leftCut).join('').toUpperCase();
 
             if (this.wordBank.has(substr)) {
-                return {
+                const match = {
                     word: substr,
                     startIdx: leftCut,
                     endIdx: totalLen - 1, // 永远是最右侧
                     length: substr.length
                 };
+                
+                // 确保返回最长匹配
+                if (!longestMatch || substr.length > longestMatch.length) {
+                    longestMatch = match;
+                }
             }
 
             // 如果剩余长度 < 3，停止检测
@@ -149,7 +158,7 @@ export class IncrementalWordMatcher implements IWordMatcher {
             }
         }
 
-        return null;
+        return longestMatch;
     }
 
     /**

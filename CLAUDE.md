@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **不自动提交**: 禁止 git push 或 git commit，需要用户明确同意
 - **不追求完美**: 谦虚务实，实践检验，有疑问就问
 - **代码有效**: 不添加调试用的无效日志，调试完后主动清除
+- **禁止在代码和注释里使用图标，只允许使用文字**
 
 ## 快速开始
 

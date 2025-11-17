@@ -2,6 +2,53 @@
 
 > 归档说明：完整历史已复制到 `docs/archive/CHANGELOG-ARCHIVE.md`，本文件仅保留最近且重要的变更。
 
+## 2025-11-17 - 🔧 [BUGFIX] BAS闪烁被ASK抢占问题修复（竞态条件与状态管理）
+
+### 问题现象
+- 在叠叠乐场景中快速输入 B→A→S→K 时，BAS 开始闪烁，但当 K 输入后，ASK 开始闪烁而不是 BASK
+- 根本原因：BASK 被检测到但立即被 3 秒自动移除定时器清除，用户没有时间看到
+
+### 根本原因分析
+1. **竞态条件**：本地验证和网络验证的时序问题
+2. **状态管理缺陷**：新字母进入时立即清除闪烁状态，没有等待网络验证完成
+3. **自动移除定时器干扰**：BASK 检测到后立即被 3 秒定时器清除
+
+### 修复方案
+1. **强化版本号守卫**：
+   - 增加 `inputVersion` 输入推进版本号
+   - 每次牌槽变更时自增，防止过期验证结果误触发
+   
+2. **优化网络验证排序**：
+   - 确保返回最长匹配（优先 BASK 而非 ASK）
+   - 修改 `validateSuffixes()` 中的排序逻辑
+
+3. **修复闪烁状态管理**：
+   - 新字母进入时不立即清除闪烁
+   - 等待网络验证完成后再决定状态切换
+   - 增加 `autoRemoveVersion` 防止旧的自动移除事件
+
+4. **WordMatcher 最长匹配优化**：
+   - 确保 `fullCheck()` 方法返回最长匹配
+   - 遍历所有可能子串，记录最长有效单词
+
+### 修改文件
+- `src/cocos/assets/scripts/app/StackGameApp.ts`
+  - 增加 `inputVersion` 和 `autoRemoveVersion` 属性
+  - 修改 `onLetterAdded()` 不立即清除闪烁
+  - 优化 `validateSuffixes()` 排序逻辑
+  - 增加 `currentMatchState` 状态管理
+  
+- `src/cocos/assets/scripts/core/WordMatcher.ts`
+  - 修改 `fullCheck()` 确保返回最长匹配
+  - 遍历所有子串，记录最长有效单词
+
+### 验证结果
+- 所有模拟测试通过，BASK 正确检测并保持闪烁
+- 解决了快速输入时单词被抢占的问题
+- 用户现在有足够时间看到并确认 BASK
+
+---
+
 ## 2025-11-16 - 🔧 [BUGFIX] 快速连续点击卡片消失 Bug 修复（竞态条件）
 
 ### 问题现象
@@ -35,11 +82,6 @@
   - L231-232：Tween 完成时更新状态
   - L256：`clear()` 时清理 `removingCards`
 
-### 测试脚本
-- `scripts/debug_rapid_click_bug.js` - 快速点击场景复现与分析
-- `scripts/analyze_update_block_status.js` - 深度分析竞态条件
-- `scripts/BUG_REPORT.md` - 完整问题分析报告
-
 ---
 
 ## 2025-11-15 - 🔧 [BUGFIX] 生词本缓存读写彻底修复（localStorage 同步问题）
@@ -48,8 +90,8 @@
 - 现象：验证单词后，NetworkService 返回中文释义，但 GlossService.explain() 仍报 `[miss]`，无法获取缓存的释义。
   ```
   [NetworkService] 验证 BAN → valid=true definition=禁止；禁止；取缔 source=cache 耗时=1357ms
-  [GlossService][miss] {word: 'BAN'}  ← 问题：缓存未被读到
-  [StackGameApp] ⚠️ 未找到词义: BAN
+  [GlossService][miss]  ← 问题：缓存未被读到
+  [StackGameApp] 未找到词义: BAN
   ```
 
 ### 根本问题分析
@@ -69,15 +111,15 @@
 - 原因：removeWord() 中有复杂的 try-catch 嵌套，混淆了正常流程
 - 后果：代码可读性差，问题难以定位
 
-### ✅ 修复清单
+### 修复清单
 
 **修复 1：NetworkService 立即 flush L2** (L450)
 ```typescript
 // 修改前
-NetworkService.flushL2IfNeeded(false);  // ❌ 延迟 flush
+NetworkService.flushL2IfNeeded(false);  // 延迟 flush
 
 // 修改后
-NetworkService.flushL2IfNeeded(true);   // ✅ 立即 flush
+NetworkService.flushL2IfNeeded(true);   // 立即 flush
 ```
 **原理**：验证结果需要同步写入 localStorage，否则 GlossService 无法立刻读到。
 
@@ -95,30 +137,30 @@ NetworkService.flushL2IfNeeded(true);   // ✅ 立即 flush
 - 统一使用 `||` 处理空值，无需异常处理
 - 直接调用 `glossService.explain()`（现已能立即命中 L2）
 
-### 📊 修改文件清单
+### 修改文件清单
 - `src/cocos/assets/scripts/services/NetworkService.ts` (L450) - 立即 flush
 - `src/cocos/assets/scripts/data/GlossService.ts` (L196-260) - 增强诊断日志
 - `src/cocos/assets/scripts/app/StackGameApp.ts` (L624-672) - 简化调用链
 
-### 🎯 验证方式
+### 验证方式
 拼出 BAN 两次，观察日志变化：
 
 **修复前**：
 ```
 第一次：[NetworkService] valid=true definition=禁止
-       [GlossService][miss] ❌
-第二次：[GlossService][miss] ❌
+       [GlossService][miss] 
+第二次：[GlossService][miss] 
 ```
 
 **修复后**：
 ```
 第一次：[NetworkService] valid=true definition=禁止
-       [GlossService][l2-hit] ✅ 本次修复成功！
+       [GlossService][l2-hit] 本次修复成功！
 第二次：[NetworkService] id=session-cache（会话缓存命中）
-       [GlossService][l2-hit] ✅ 继续命中
+       [GlossService][l2-hit] 继续命中
 ```
 
-### 📝 教训
+### 教训
 - **localStorage 竞态问题**：写入与读取的时机必须严格对齐，延迟 flush 会导致"写入后立即读不到"
 - **跨模块缓存协调**：多个模块共享缓存时，必须统一键、数据结构、写入策略与读取逻辑
 - **诊断日志分层**：每个失败路径都需要独立的日志，便于快速定位问题
@@ -137,17 +179,17 @@ NetworkService.flushL2IfNeeded(true);   // ✅ 立即 flush
 
 ### 修改内容
 
-#### ✅ Worker (`tools/cloudflare/worker.js`)
+#### Worker (`tools/cloudflare/worker.js`)
 - 硬编码 RSA-2048 公钥（SPKI DER Base64 格式，来自 `src/backend/public.pem`）
 - 新增 `importRsaPublicKey()` 和 `encryptRsaOaep()` 函数
 - 修改 `/w-game-service` 路由处理：读取明文请求体 → RSA-OAEP-SHA256 加密 → 转发
 
-#### ✅ 客户端 (`src/cocos/assets/scripts/services/NetworkService.ts`)
+#### 客户端 (`src/cocos/assets/scripts/services/NetworkService.ts`)
 - `BASE_URL` 改为 `https://ai.elvis1949.cloudns.pro/w-game-service`
 - `GENERATE_PATH` 改为 `/api/v1/word/verify`
 - 删除本地 Gemini 调用逻辑，统一走后端
 
-#### ✅ 后端 (`src/backend/word_validator.py`)
+#### 后端 (`src/backend/word_validator.py`)
 - 优化 Gemini prompt 与 responseSchema 配置
 - `maxOutputTokens` 从 32 提升至 64
 
@@ -444,4 +486,3 @@ NetworkService.flushL2IfNeeded(true);   // ✅ 立即 flush
 - 后端：RSA 解密中间件、Nonce 防重放、时间戳容差、响应标准化
 - 客户端：改用 `/api/v1/word/verify`，字段映射统一为 `cache | gemini`
 - 验证：正常/缓存/防重放/公钥/健康检查/综合安全全部通过
-
