@@ -18,9 +18,9 @@ export const REMOTE_MERGE_WINDOW_MS = 220 as const;
 // 远端并发与排队
 export const REMOTE_CONCURRENCY = 1 as const;
 export const REMOTE_QUEUE = 3 as const;
-// 全局令牌桶（客户端侧）
-export const RATE_CAPACITY = 6 as const;
-export const RATE_REFILL_PER_SEC = 2 as const;
+// 全局令牌桶（客户端侧）- 调整为更宽松的限制，支持 dictionaryapi.dev 频繁调用
+export const RATE_CAPACITY = 20 as const;
+export const RATE_REFILL_PER_SEC = 5 as const;
 // 字典/维基超时
 export const DICT_TIMEOUT_MS = 1200 as const;
 export const WIKI_TIMEOUT_MS = 1200 as const;

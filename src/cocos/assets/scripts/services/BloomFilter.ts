@@ -8,16 +8,24 @@ class BloomFilterCore {
     private ready = false;
 
     async load(): Promise<boolean> {
+        console.log('[BloomFilter] 开始加载布隆过滤器...');
         // 1) 优先从 words Bundle 加载
         try {
             const bundle = await new Promise<any>((resolve, reject) => {
                 const cached = assetManager.getBundle('words');
                 if (cached) {
+                    console.log('[BloomFilter] 使用缓存的 words bundle');
                     resolve(cached);
                 } else {
+                    console.log('[BloomFilter] 加载 words bundle...');
                     assetManager.loadBundle('words', (err, b) => {
-                        if (err || !b) reject(err || new Error('LOAD_BUNDLE_FAIL'));
-                        else resolve(b);
+                        if (err || !b) {
+                            console.error('[BloomFilter] words bundle 加载失败:', err);
+                            reject(err || new Error('LOAD_BUNDLE_FAIL'));
+                        } else {
+                            console.log('[BloomFilter] words bundle 加载成功');
+                            resolve(b);
+                        }
                     });
                 }
             });
@@ -39,8 +47,8 @@ class BloomFilterCore {
             });
 
             if (bufferFromTxt) {
+                console.log('[BloomFilter] 从 Base64 文本资产加载成功');
                 this.parse(bufferFromTxt);
-                this.ready = true;
                 return true;
             }
 
@@ -86,20 +94,38 @@ class BloomFilterCore {
             // ignore and fallback
         }
 
-        // 2) 回退：直接 fetch 项目相对路径（开发环境/远程静态资源）
-        try {
-            const resp = await fetch(BLOOM_PATH);
-            if (resp.ok) {
-                const buf = await resp.arrayBuffer();
-                this.parse(buf);
-                this.ready = true;
+        // 2) 回退：尝试从本地文件系统加载（编辑器预览）
+            const fallbackPath = BLOOM_PATH; // 'assets/bundle/words/english.bloom'
+            try {
+                const fs = await import('fs');
+                console.log('[BloomFilter] 从本地文件系统加载:', fallbackPath);
+                const buffer = fs.readFileSync(fallbackPath);
+                this.parse(buffer.buffer);
+                console.log('[BloomFilter] 本地文件系统加载成功');
                 return true;
+            } catch (e) {
+                console.log('[BloomFilter] 本地文件系统加载失败:', e);
+                // 编辑器外环境没有 fs，忽略
             }
-        } catch {
-            // ignore
-        }
-        this.ready = false;
-        return false;
+
+            // 3) 最终回退：网络加载（同域或 CDN）
+            try {
+                console.log('[BloomFilter] 尝试网络加载:', `./assets/bundle/words/${BLOOM_ASSET}`);
+                const resp = await fetch(`./assets/bundle/words/${BLOOM_ASSET}`);
+                if (resp.ok) {
+                    const buffer = await resp.arrayBuffer();
+                    this.parse(buffer);
+                    console.log('[BloomFilter] 网络加载成功');
+                    return true;
+                }
+            } catch (e) {
+                console.log('[BloomFilter] 网络加载失败:', e);
+                // 网络失败也忽略
+            }
+
+            console.error('[BloomFilter] 所有加载方式都失败，布隆过滤器不可用');
+            this.ready = false;
+            return false;
     }
 
     private parse(buf: ArrayBuffer): void {
@@ -115,6 +141,7 @@ class BloomFilterCore {
         this.m = m;
         this.k = k;
         this.bits = bits;
+        this.ready = true; // ✅ 标记为已准备就绪
     }
 
     private simpleHash64(bytes: Uint8Array): number[] {
@@ -160,23 +187,30 @@ class BloomFilterCore {
         return (this.bits[idx] & (1 << off)) !== 0;
     }
 
-    mightContain(wordUpper: string): boolean {
-        if (!this.ready) return true; // 未加载不阻塞，返回"可能包含"
-        const w = wordUpper.toUpperCase();
-        const bytes = new TextEncoder().encode(w);
-
-        // 获取两个独立的 hash 值
-        const h1_parts = this.simpleHash64(bytes);
-        const h1_low = h1_parts[1];
-        const h2 = this.murmurhash3_32(bytes);
-
+    private check(wordUpper: string): boolean {
+        // 将单词转为 UTF-8 字节
+        const encoder = new TextEncoder();
+        const bytes = encoder.encode(wordUpper);
+        
+        // 使用双哈希方法生成 k 个哈希值
+        const [h1, h2] = this.simpleHash64(bytes);
+        
         for (let i = 0; i < this.k; i++) {
-            // 计算 (h1 + i * h2) % m
-            // h1 是 64 位，但我们只取低 32 位用于模运算
-            const pos = (h1_low + i * h2) % this.m;
-            if (!this.testBit(pos)) return false;
+            const pos = (h1 + i * h2) % this.m;
+            if (!this.testBit(pos)) {
+                return false; // 只要有一个位为 0，就确定不存在
+            }
         }
-        return true;
+        
+        return true; // 所有位都为 1，可能存在
+    }
+
+    mightContain(wordUpper: string): boolean {
+        if (!this.ready) {
+            console.warn('[BloomFilter] 未加载完成，默认返回 true（可能包含）');
+            return true; // 未加载不阻塞，返回"可能包含"
+        }
+        return this.check(wordUpper);
     }
 }
 

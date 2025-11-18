@@ -2,6 +2,103 @@
 
 > 归档说明：完整历史已复制到 `docs/archive/CHANGELOG-ARCHIVE.md`，本文件仅保留最近且重要的变更。
 
+## 2025-11-18 - 🔧 [BUGFIX] 客户端超时与 dictionaryapi.dev 调用恢复
+
+### 问题1：客户端调用后端服务5秒超时
+**现象**：
+- NetworkService.ts:241 显示请求超时 (5000ms)
+- 后端服务日志显示未收到客户端请求
+- curl 命令通过 Worker 正常返回，说明 Worker 和后端都正常
+
+**分析**：
+- 这是 **三层调用链路**：客户端 → Cloudflare Worker → 后端服务
+- 问题可能出在 Worker 层面（脚本错误、冷启动延迟、RSA 加密异常等）
+- 需要检查 Cloudflare Dashboard 的 Worker 实时日志
+
+### 问题2：dictionaryapi.dev 调用缺失
+**现象**：
+- 看到连续的后端服务请求，但没有 dictionaryapi.dev 调用
+- 误以为架构已简化为完全依赖后端
+
+**根本原因**：
+1. **限流器过于严格**：`RATE_CAPACITY = 6`，`RATE_REFILL_PER_SEC = 2`，短时间内只能进行6次调用
+2. **Bloom Filter 缺失方法**：`check` 方法未定义，导致 `this.check is not a function` 错误
+3. **缓存命中**：BASK、AGO 等单词在本地词库中直接命中，未触发验证流程
+
+### 修复方案
+
+#### 1. 限流器配置优化
+```typescript
+// 调整为更宽松的限制，支持 dictionaryapi.dev 频繁调用
+export const RATE_CAPACITY = 20 as const;      // 从 6 提升到 20
+export const RATE_REFILL_PER_SEC = 5 as const; // 从 2 提升到 5
+```
+
+#### 2. BloomFilter 核心方法实现
+- 添加缺失的 `check(wordUpper: string)` 方法
+- 使用双哈希算法生成 k 个哈希值：`(h1 + i * h2) % m`
+- 检查所有对应位是否为 1，实现标准布隆过滤器查询逻辑
+
+#### 3. 状态管理修正
+- 在 `parse()` 方法中正确设置 `ready = true`
+- 移除其他地方的重复设置，确保状态管理一致性
+
+#### 4. 验证流程日志增强
+- 在 NewWordValidator 中添加详细日志跟踪：
+  - Bloom Filter 检查结果
+  - 轻规则检查结果
+  - dictionaryapi.dev 调用状态
+  - Gemini 补充中文释义情况
+
+### 本地缓存架构说明
+客户端采用 **双层缓存架构**：
+- **L1 缓存（内存）**：`wordCache` Map，游戏会话期间的临时缓存
+- **L2 缓存（持久化）**：`l2Dict` localStorage，跨会话持久存储
+
+**缓存格式**：
+```typescript
+{
+  v: boolean,     // 是否有效
+  de?: string,    // 英文释义
+  dz?: string,    // 中文释义  
+  s: string,      // 来源 (local/dict/gemini/cache)
+  t: number,      // 时间戳
+  e: number       // 过期时间
+}
+```
+
+**TTL 策略**：
+- 有效单词：7天 (`CACHE_TTL_VALID_MS`)
+- 无效单词：3天 (`CACHE_TTL_INVALID_MS`)
+
+**快速清理缓存方法**：
+```typescript
+// 在 Cocos Creator 控制台执行
+sys.localStorage.removeItem('wgame_word_cache_v2')  // 清单词缓存
+sys.localStorage.removeItem('notebook_session')     // 清生词本
+```
+
+### 修改文件
+- `src/cocos/assets/scripts/config/word-validate.ts` - 限流器配置优化
+- `src/cocos/assets/scripts/services/BloomFilter.ts` - 实现 check 方法，修正状态管理
+- `src/cocos/assets/scripts/services/NewWordValidator.ts` - 增强验证流程日志
+
+### 正确的验证流程
+```
+1. 本地词库检查 (5-10ms)
+2. Bloom Filter + 轻规则快速否定 (<1ms)  
+3. dictionaryapi.dev 有效性验证 (200-1200ms) ⭐ 关键修复
+4. Gemini 中文释义补充 (300-900ms，仅当需要中文时)
+```
+
+### 效果
+- 限流器不再阻止 dictionaryapi.dev 调用
+- Bloom Filter 正常工作，快速否定无效单词
+- 验证流程完全恢复，性能和体验兼顾
+- 详细的日志便于问题追踪和调试
+
+---
+
 ## 2025-11-18 - 🔧 [BUGFIX] 中文释义错误问题修复（强化提示词 + 幻觉检测）
 
 ### 问题现象
