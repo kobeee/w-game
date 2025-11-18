@@ -113,11 +113,11 @@ export class StackGameApp extends Component {
     // 可用于正式游玩的堆叠布局池（排除 pyramid_default）
     private static readonly GRID_LAYOUT_POOL: string[] = [
         'layouts/sheep_style_complex',
-        'layouts/stack_center_tower',
-        'layouts/stack_cross_towers',
-        'layouts/stack_diagonal_ridge',
-        'layouts/stack_ring_fortress',
-        'layouts/stack_multi_towers'
+        'layouts/stack_multi_towers',
+        'layouts/stack_spiral_maze',
+        'layouts/stack_diamond_layers',
+        'layouts/stack_chaos_web',
+        'layouts/stack_zigzag_cascade'
     ];
 
     protected async onLoad(): Promise<void> {
