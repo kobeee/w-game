@@ -12,6 +12,7 @@ import { DefinitionHintPool } from '../ui/DefinitionHintPool';
 import { DefinitionHintView } from '../ui/DefinitionHintView';
 import { WordStat, GameResult } from '../types/words';
 import { HINT_STAY_MS } from '../config/word-validate';
+import { WordPoolSelector, WordPoolConfig, Difficulty, WordPoolStrategy } from '../core/WordPoolSelector';
 
 const { ccclass, property } = _decorator;
 
@@ -363,7 +364,13 @@ export class StackGameApp extends Component {
 
                 // 获取词库（用于分配字母）
                 const glossService = GlossService.getInstance();
-                const wordPool = glossService.getAllWords().slice(0, 100); // 使用前100个单词作为词库
+                const allWords = glossService.getAllWords();
+
+                // 使用新的单词选择器
+                const wordPoolConfig: WordPoolConfig = this.getWordPoolConfig(dailySeed);
+                const wordPool = WordPoolSelector.selectWordPool(allWords, wordPoolConfig);
+
+                console.log(`[StackGameApp] 使用策略: ${wordPoolConfig.strategy}, 难度: ${wordPoolConfig.difficulty || 'default'}, 单词数: ${wordPool.length}`);
 
                 // 加载并转换为Level
                 this.currentLevel = await GridLayoutLoader.loadAndConvertToLevel(
@@ -415,6 +422,46 @@ export class StackGameApp extends Component {
             this.updateScoreLabel();
             this.updateClearRateLabel();
         }
+    }
+
+    /**
+     * 获取单词池配置
+     * 可根据需要调整策略，比如基于日期、关卡或玩家进度
+     */
+    private getWordPoolConfig(seed: string): WordPoolConfig {
+        // 方案1：使用每日策略（周日轮换）
+        // return WordPoolSelector.getDailyStrategy();
+
+        // 方案2：基于种子选择策略（确保相同种子相同体验）
+        const seedNum = this.hashCode(seed);
+        const strategies: WordPoolStrategy[] = ['random', 'balanced', 'themed', 'progressive'];
+        const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
+        const themes = ['animals', 'food', 'sports', 'nature'];
+
+        const strategyIndex = seedNum % strategies.length;
+        const difficultyIndex = Math.floor(seedNum / 4) % difficulties.length;
+        const themeIndex = Math.floor(seedNum / 12) % themes.length;
+
+        return {
+            strategy: strategies[strategyIndex],
+            difficulty: difficulties[difficultyIndex],
+            theme: themes[themeIndex],
+            count: 100,
+            seed: seed
+        };
+    }
+
+    /**
+     * 字符串哈希函数（与LevelGenerator中的保持一致）
+     */
+    private hashCode(str: string): number {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return Math.abs(hash);
     }
 
     /**

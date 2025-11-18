@@ -69,8 +69,6 @@ export class NewWordValidator {
         const bloomCheck = bloomMightContain(w);
         const lightRuleCheck = violatesLightRules(w);
 
-        console.log(`[NewWordValidator] ${w} → bloom=${bloomCheck} lightRules=${!lightRuleCheck}`);
-
         if (!bloomCheck || lightRuleCheck) {
             const res: ValidateResult = {
                 word: w,

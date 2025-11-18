@@ -1,65 +1,7 @@
 import { Vec3, Rect } from 'cc';
 import { SmartLayoutGenerator } from './SmartLayoutGenerator';
 import { Card, Level, LayoutTemplate } from '../data/StackTypes';
-
-/**
- * 伪随机数生成器（种子可控）
- */
-class SeededRandom {
-    private seed: number;
-
-    constructor(seed: string) {
-        // 将字符串种子转换为数字
-        this.seed = this.hashCode(seed);
-    }
-
-    /**
-     * 字符串哈希函数
-     */
-    private hashCode(str: string): number {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32bit integer
-        }
-        return Math.abs(hash);
-    }
-
-    /**
-     * 生成[0, 1)范围的伪随机数
-     */
-    public next(): number {
-        const x = Math.sin(this.seed++) * 10000;
-        return x - Math.floor(x);
-    }
-
-    /**
-     * 生成[min, max)范围的整数
-     */
-    public nextInt(min: number, max: number): number {
-        return Math.floor(this.next() * (max - min)) + min;
-    }
-
-    /**
-     * 从数组中随机选择一个元素
-     */
-    public choice<T>(array: T[]): T {
-        return array[this.nextInt(0, array.length)];
-    }
-
-    /**
-     * 洗牌算法（Fisher-Yates）
-     */
-    public shuffle<T>(array: T[]): T[] {
-        const result = [...array];
-        for (let i = result.length - 1; i > 0; i--) {
-            const j = this.nextInt(0, i + 1);
-            [result[i], result[j]] = [result[j], result[i]];
-        }
-        return result;
-    }
-}
+import { SeededRandom } from '../util/SeededRandom';
 
 /**
  * 关卡生成器
@@ -132,7 +74,7 @@ export class LevelGenerator {
         let totalLetters = 0;
 
         // 按单词频率排序（常用词优先）
-        const sortedPool = this.shuffle(rng, wordPool);
+        const sortedPool = rng.shuffle(wordPool);
 
         for (const word of sortedPool) {
             const wordLetters = word.toUpperCase().split('');
@@ -210,7 +152,7 @@ export class LevelGenerator {
         }
 
         // 洗牌
-        const shuffledLetters = this.shuffle(rng, letters);
+        const shuffledLetters = rng.shuffle(letters);
 
         // 收集所有布局位置
         const allPositions: { layer: number; position: Vec3 }[] = [];
@@ -224,7 +166,7 @@ export class LevelGenerator {
         }
 
         // 洗牌位置
-        const shuffledPositions = this.shuffle(rng, allPositions);
+        const shuffledPositions = rng.shuffle(allPositions);
 
         // 分配字母到位置
         const numCards = Math.min(shuffledLetters.length, shuffledPositions.length);
@@ -258,12 +200,7 @@ export class LevelGenerator {
         return cards;
     }
 
-    /**
-     * 使用种子随机数生成器洗牌
-     */
-    private static shuffle<T>(rng: SeededRandom, array: T[]): T[] {
-        return rng.shuffle(array);
-    }
+    
 
     /**
      * 获取默认单词池（用于测试）
