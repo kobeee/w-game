@@ -224,18 +224,36 @@ _http_client: Optional[httpx.AsyncClient] = None
 # ===== Gemini API 调用 =====
 async def call_gemini_api(word: str) -> dict:
     """
-    调用 Gemini API 验证单词
+    调用 Gemini API 翻译已验证的英文单词
+
+    重要：此函数假设单词已经过客户端验证，仅负责翻译
 
     Args:
-        word: 单词（大写）
+        word: 已验证的英文单词（大写）
 
     Returns:
-        验证结果 {"valid": bool, "definition": str}
+        {"valid": bool, "definition": str}
     """
+    logger.info(f"[TRANSLATE] 开始翻译已验证单词: {word}")
+
+    # ✅ 终极提示词v2：更严格的验证和翻译限制
     prompt = (
-        f"给出单词\"{word}\"的简体中文释义（≤10字，简洁直白）。\n"
-        f"仅返回JSON，格式：{{\"definition\": \"中文释义\"}}\n"
-        f"禁止任何非JSON内容（含Markdown、说明、代码块）。"
+        f"翻译任务：将已通过权威字典验证的英文单词\"{word}\"翻译为简体中文。\n"
+        f"\n"
+        f"【严格约束】（必须遵守）：\n"
+        f"1. 该单词已通过dictionaryapi.dev验证，100%确认为有效英文单词\n"
+        f"2. 你只能翻译，绝对不能质疑或判断单词有效性\n"
+        f"3. 如果你觉得这不是单词，返回空字符串而非任何解释\n"
+        f"4. 禁止翻译缩写、拼音、专有名词缩写（如BAS、BAI等）\n"
+        f"5. 只翻译常见英文单词，3字母以下的缩写一律返回空\n"
+        f"\n"
+        f"翻译规则：\n"
+        f"- 仅返回最常用中文释义（≤8字）\n"
+        f"- 有疑问时返回空字符串，不要猜测\n"
+        f"- 绝不翻译非标准英文组合\n"
+        f"\n"
+        f"JSON格式输出：{{\"definition\": \"中文释义或空字符串\"}}\n"
+        f"无其他任何文字！"
     )
 
     try:
@@ -297,23 +315,37 @@ async def call_gemini_api(word: str) -> dict:
         if parsed is None:
             raise json.JSONDecodeError("Failed to parse Gemini JSON", text, 0)
 
-        # 单词已通过 dictionaryapi.dev 验证，这里仅返回中文释义
-        return {
-            "valid": True,
-            "definition": parsed.get("definition", ""),
-        }
+        definition = parsed.get("definition", "").strip()
+        
+        # ✅ 验证释义质量：不为空且不是拒绝回答
+        if not definition:
+            logger.warning(f"[GEMINI] 返回空释义: {word}")
+            return {"valid": True, "definition": ""}
+        
+        # ✅ 检查可能的幻觉回答
+        hallucination_indicators = [
+            "不是", "无效", "不存在", "无法翻译", "未知", "抱歉", 
+            "sorry", "invalid", "not", "exist", "unknown"
+        ]
+        lower_def = definition.lower()
+        if any(indicator in lower_def for indicator in hallucination_indicators):
+            logger.warning(f"[GEMINI] 疑似幻觉回答: {word} → {definition}")
+            return {"valid": True, "definition": ""}
+
+        logger.info(f"[TRANSLATE] 翻译成功: {word} → {definition}")
+        return {"valid": True, "definition": definition}
 
     except httpx.TimeoutException:
-        logger.error(f"[Gemini] ⚠️ 请求超时: {word}")
+        logger.error(f"[GEMINI] 请求超时: {word}")
         return {"valid": True, "definition": "", "error": "GEMINI_TIMEOUT"}
     except httpx.HTTPStatusError as e:
-        logger.error(f"[Gemini] ⚠️ HTTP 错误 {e.response.status_code}: {word}")
+        logger.error(f"[GEMINI] HTTP错误 {e.response.status_code}: {word}")
         return {"valid": True, "definition": "", "error": f"GEMINI_HTTP_{e.response.status_code}"}
     except (KeyError, json.JSONDecodeError) as e:
-        logger.error(f"[Gemini] ⚠️ 解析返回失败: {e}")
+        logger.error(f"[GEMINI] 解析失败: {e}")
         return {"valid": True, "definition": "", "error": "GEMINI_PARSE_ERROR"}
     except Exception as e:
-        logger.error(f"[Gemini] ⚠️ 未知错误: {e}")
+        logger.error(f"[GEMINI] 未知错误: {e}")
         return {"valid": True, "definition": "", "error": "INTERNAL_ERROR"}
 
 
