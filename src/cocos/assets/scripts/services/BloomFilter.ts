@@ -1,5 +1,5 @@
 import { assetManager, TextAsset } from 'cc';
-import { BLOOM_ASSET, BLOOM_ASSET_TXT, BLOOM_PATH } from '../config/word-validate';
+import { BLOOM_ASSET_TXT } from '../config/word-validate';
 
 class BloomFilterCore {
     private bits!: Uint8Array;
@@ -9,7 +9,6 @@ class BloomFilterCore {
 
     async load(): Promise<boolean> {
         console.log('[BloomFilter] 开始加载布隆过滤器...');
-        // 1) 优先从 words Bundle 加载
         try {
             const bundle = await new Promise<any>((resolve, reject) => {
                 const cached = assetManager.getBundle('words');
@@ -30,7 +29,6 @@ class BloomFilterCore {
                 }
             });
 
-            // 0) 优先：尝试加载 Base64 文本资产（编辑器/预览最稳妥）
             const bufferFromTxt: ArrayBuffer | null = await new Promise((resolve) => {
                 bundle.load(BLOOM_ASSET_TXT, TextAsset, (e: any, txt: TextAsset) => {
                     if (!e && txt && typeof txt.text === 'string' && txt.text.length > 0) {
@@ -52,69 +50,14 @@ class BloomFilterCore {
                 return true;
             }
 
-            // 1) 其次：以原生资源方式从 Bundle 加载（无需 fetch）
-            const bufferFromBundle: ArrayBuffer | null = await new Promise((resolve) => {
-                // 不指定类型，直接拿到底层原生资源（_nativeAsset）
-                bundle.load(BLOOM_ASSET, (err: any, asset: any) => {
-                    if (err || !asset) {
-                        resolve(null);
-                        return;
-                    }
-                    const raw = (asset as any)._nativeAsset;
-                    if (raw instanceof ArrayBuffer) {
-                        resolve(raw);
-                        return;
-                    }
-                    // 某些平台返回的是 TypedArray 或 Blob
-                    if (raw && raw.buffer instanceof ArrayBuffer) {
-                        resolve(raw.buffer as ArrayBuffer);
-                        return;
-                    }
-                    // 若误当作文本资产，尝试从 text/base64 恢复
-                    const txt = (asset as TextAsset)?.text;
-                    if (typeof txt === 'string' && txt.length > 0) {
-                        try {
-                            const bin = atob(txt);
-                            const arr = new Uint8Array(bin.length);
-                            for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-                            resolve(arr.buffer);
-                            return;
-                        } catch { /* ignore */ }
-                    }
-                    resolve(null);
-                });
-            });
-
-            if (bufferFromBundle) {
-                this.parse(bufferFromBundle);
-                this.ready = true;
-                return true;
-            }
-        } catch {
-            // ignore and fallback
-        }
-
-        // 2) 回退：跳过本地文件系统加载（Cocos Creator环境不支持fs）
-            console.log('[BloomFilter] 跳过本地文件系统加载（Cocos Creator环境不支持fs）');
-
-            // 3) 最终回退：网络加载（同域或 CDN）
-            try {
-                console.log('[BloomFilter] 尝试网络加载:', `./assets/bundle/words/${BLOOM_ASSET}`);
-                const resp = await fetch(`./assets/bundle/words/${BLOOM_ASSET}`);
-                if (resp.ok) {
-                    const buffer = await resp.arrayBuffer();
-                    this.parse(buffer);
-                    console.log('[BloomFilter] 网络加载成功');
-                    return true;
-                }
-            } catch (e) {
-                console.log('[BloomFilter] 网络加载失败:', e);
-                // 网络失败也忽略
-            }
-
-            console.error('[BloomFilter] 所有加载方式都失败，布隆过滤器不可用');
+            console.error('[BloomFilter] Base64 文本资产加载失败，布隆过滤器不可用');
             this.ready = false;
             return false;
+        } catch (e) {
+            console.error('[BloomFilter] 加载异常:', e);
+            this.ready = false;
+            return false;
+        }
     }
 
     private parse(buf: ArrayBuffer): void {

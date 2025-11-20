@@ -1,5 +1,39 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-11-20 - 🧹 [CLEANUP] Bloom 过滤器加载简化（仅保留 Base64 格式）
+
+### 背景
+- `english.bloom` 二进制文件存在但无实际用途
+- 实际使用的是 Base64 格式的 `english.bloom.txt` 文件
+- 为避免多余网络下载，简化加载逻辑
+
+### 修改内容
+1. **删除冗余文件**：
+   - 删除 `english.bloom` 二进制文件
+   - 删除对应的 `.meta` 文件
+
+2. **简化加载逻辑**（`BloomFilter.ts`）：
+   - 移除二进制文件加载、网络加载等多余回退方案
+   - 仅保留 Base64 文本资产加载（`english.bloom.txt`）
+   - 清理无用的导入（`BLOOM_ASSET`、`BLOOM_PATH`）
+
+3. **保持功能完整**：
+   - 布隆过滤器功能完全不受影响
+   - 加载失败有明确的错误日志
+   - 代码更简洁，维护性更好
+
+### 效果
+- 减少不必要的网络请求尝试
+- 代码逻辑更清晰，仅关注实际使用的资源
+- 保持原有功能，提升加载效率
+
+### 修改文件
+- 删除：`src/cocos/assets/bundle/words/english.bloom`
+- 删除：`src/cocos/assets/bundle/words/english.bloom.meta`
+- 修改：`src/cocos/assets/scripts/services/BloomFilter.ts`
+
+---
+
 > 归档说明：完整历史已复制到 `docs/archive/CHANGELOG-ARCHIVE.md`，本文件仅保留最近且重要的变更。
 
 ## 2025-11-20 - 🔧 [BUGFIX] 字母卡片尺寸适配（90×90 → 80×80）
