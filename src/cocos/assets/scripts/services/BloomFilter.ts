@@ -94,19 +94,8 @@ class BloomFilterCore {
             // ignore and fallback
         }
 
-        // 2) 回退：尝试从本地文件系统加载（编辑器预览）
-            const fallbackPath = BLOOM_PATH; // 'assets/bundle/words/english.bloom'
-            try {
-                const fs = await import('fs');
-                console.log('[BloomFilter] 从本地文件系统加载:', fallbackPath);
-                const buffer = fs.readFileSync(fallbackPath);
-                this.parse(buffer.buffer);
-                console.log('[BloomFilter] 本地文件系统加载成功');
-                return true;
-            } catch (e) {
-                console.log('[BloomFilter] 本地文件系统加载失败:', e);
-                // 编辑器外环境没有 fs，忽略
-            }
+        // 2) 回退：跳过本地文件系统加载（Cocos Creator环境不支持fs）
+            console.log('[BloomFilter] 跳过本地文件系统加载（Cocos Creator环境不支持fs）');
 
             // 3) 最终回退：网络加载（同域或 CDN）
             try {

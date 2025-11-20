@@ -96,21 +96,13 @@ export class LocalDictionary {
                         mergeJson(asset);
                     }
 
-                    // 可选：superset（更大覆盖）
-                    bundle.load('zh_gloss_superset', JsonAsset, (supErr, supAsset) => {
-                        if (!supErr) {
-                            mergeJson(supAsset);
+                    // 可选：custom（项目自定义覆盖/修正）
+                    bundle.load('zh_gloss_custom', JsonAsset, (cusErr, cusAsset) => {
+                        if (!cusErr) {
+                            mergeJson(cusAsset);
                         }
-
-                        // 可选：custom（项目自定义覆盖/修正）
-                        bundle.load('zh_gloss_custom', JsonAsset, (cusErr, cusAsset) => {
-                            if (!cusErr) {
-                                mergeJson(cusAsset);
-                            }
-                            resolve();
-                        });
+                        resolve();
                     });
-
                 });
             });
         });

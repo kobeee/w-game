@@ -116,11 +116,7 @@ export class GlossService {
                     console.error('[GlossService] ❌ 核心词义库加载失败');
                 }
 
-                // 额外加载：超集与自定义词义库（幂等合并）
-                const supersetGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_superset', true);
-                if (supersetGlossAsset && (supersetGlossAsset as any).json) {
-                    this.mergeGlossDict((supersetGlossAsset as any).json);
-                }
+                // 额外加载：自定义词义库（幂等合并）
                 const customGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_custom', true);
                 if (customGlossAsset && (customGlossAsset as any).json) {
                     this.mergeGlossDict((customGlossAsset as any).json);
