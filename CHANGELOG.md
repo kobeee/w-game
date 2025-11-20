@@ -2,6 +2,45 @@
 
 > 归档说明：完整历史已复制到 `docs/archive/CHANGELOG-ARCHIVE.md`，本文件仅保留最近且重要的变更。
 
+## 2025-11-20 - 🔧 [BUGFIX] 字母卡片尺寸适配（90×90 → 80×80）
+
+### 问题
+- LetterTile.prefab 尺寸从 90×90 改为 80×80
+- 叠叠乐布局验证失败：偏移值 ±40 不被允许（仅支持 ±45）
+
+### 修复内容
+1. **BlockDetector.ts** - 核心遮挡算法更新：
+   - CARD_SIZE: 90 → 80
+   - CELL: 45 → 40
+   - 更新所有注释中的尺寸说明
+
+2. **StackTypes.ts** - 网格系统常量更新：
+   - GRID_UNIT: 90 → 80
+   - OFFSET_HALF: 45 → 40
+   - AllowedOffset.HALF: 45 → 40
+   - AllowedOffset.MINUS_HALF: -45 → -40
+
+3. **布局JSON文件** - 位移参数更新：
+   - 所有 `"x": 45` → `"x": 40`
+   - 所有 `"x": -45` → `"x": -40`
+   - 所有 `"y": 45` → `"y": 40
+   - 所有 `"y": -45` → `"y": -40
+
+### 影响范围
+- 11个布局JSON文件已更新（pyramid_default.json无偏移值，无需修改）
+- 遮挡判定算法已适配新的80×80卡片尺寸
+- 验证规则已同步更新，允许 ±40 偏移值
+
+### 效果
+- 叠叠乐模式正确适配80×80尺寸的字母卡片
+- 保持原有的半格偏移设计逻辑（从45px调整为40px）
+- 布局验证通过，游戏可正常启动
+
+### 修改文件
+- `src/cocos/assets/scripts/core/BlockDetector.ts`
+- `src/cocos/assets/scripts/data/StackTypes.ts`
+- `src/cocos/assets/resources/layouts/*.json` (11个文件)
+
 ## 2025-11-20 - 📚 [DATA] 本地词库 3–7 字母大扩充
 
 - `words_core.json` 新增 9,923 个 3–7 字母单词（新增量：3字 403 / 4字 1,204 / 5字 2,058 / 6字 2,913 / 7字 3,345）

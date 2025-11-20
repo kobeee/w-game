@@ -65,25 +65,25 @@
         { "layer": 2, "gridRow": 4, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
         { "layer": 2, "gridRow": 4, "gridCol": 4, "offset": { "x": 0, "y": 0 } },
 
-        { "layer": 3, "gridRow": 2, "gridCol": 2, "offset": { "x": -45, "y": 0 } },
-        { "layer": 3, "gridRow": 2, "gridCol": 4, "offset": { "x": 45, "y": 0 } },
-        { "layer": 3, "gridRow": 4, "gridCol": 2, "offset": { "x": -45, "y": 0 } },
-        { "layer": 3, "gridRow": 4, "gridCol": 4, "offset": { "x": 45, "y": 0 } },
+        { "layer": 3, "gridRow": 2, "gridCol": 2, "offset": { "x": -40, "y": 0 } },
+        { "layer": 3, "gridRow": 2, "gridCol": 4, "offset": { "x": 40, "y": 0 } },
+        { "layer": 3, "gridRow": 4, "gridCol": 2, "offset": { "x": -40, "y": 0 } },
+        { "layer": 3, "gridRow": 4, "gridCol": 4, "offset": { "x": 40, "y": 0 } },
 
         { "layer": 3, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
-        { "layer": 3, "gridRow": 2, "gridCol": 3, "offset": { "x": 0, "y": 45 } },
-        { "layer": 3, "gridRow": 4, "gridCol": 3, "offset": { "x": 0, "y": -45 } },
-        { "layer": 3, "gridRow": 3, "gridCol": 2, "offset": { "x": -45, "y": 0 } },
-        { "layer": 3, "gridRow": 3, "gridCol": 4, "offset": { "x": 45, "y": 0 } },
+        { "layer": 3, "gridRow": 2, "gridCol": 3, "offset": { "x": 0, "y": 40 } },
+        { "layer": 3, "gridRow": 4, "gridCol": 3, "offset": { "x": 0, "y": -40 } },
+        { "layer": 3, "gridRow": 3, "gridCol": 2, "offset": { "x": -40, "y": 0 } },
+        { "layer": 3, "gridRow": 3, "gridCol": 4, "offset": { "x": 40, "y": 0 } },
 
         { "layer": 4, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": 0 } },
-        { "layer": 4, "gridRow": 2, "gridCol": 3, "offset": { "x": 0, "y": 45 } },
-        { "layer": 4, "gridRow": 4, "gridCol": 3, "offset": { "x": 0, "y": -45 } },
-        { "layer": 4, "gridRow": 3, "gridCol": 2, "offset": { "x": -45, "y": 0 } },
-        { "layer": 4, "gridRow": 3, "gridCol": 4, "offset": { "x": 45, "y": 0 } },
+        { "layer": 4, "gridRow": 2, "gridCol": 3, "offset": { "x": 0, "y": 40 } },
+        { "layer": 4, "gridRow": 4, "gridCol": 3, "offset": { "x": 0, "y": -40 } },
+        { "layer": 4, "gridRow": 3, "gridCol": 2, "offset": { "x": -40, "y": 0 } },
+        { "layer": 4, "gridRow": 3, "gridCol": 4, "offset": { "x": 40, "y": 0 } },
 
-        { "layer": 5, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": 45 } },
-        { "layer": 5, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": -45 } }
+        { "layer": 5, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": 40 } },
+        { "layer": 5, "gridRow": 3, "gridCol": 3, "offset": { "x": 0, "y": -40 } }
     ]
 }
 

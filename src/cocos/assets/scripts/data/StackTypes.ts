@@ -425,27 +425,27 @@ export interface GridCoordinate {
 
 /**
  * 允许的偏移值枚举
- * 注意：只支持整数偏移，不支持22.5px的四分之一遮挡
- * 原因：22.5px会产生浮点坐标，破坏像素对齐
+ * 注意：只支持整数偏移，不支持20px的四分之一遮挡
+ * 原因：20px会产生浮点坐标，破坏像素对齐
  */
 export enum AllowedOffset {
     /** 完全对齐网格 */
     ZERO = 0,
 
-    /** 1/2卡片偏移 (45px) */
-    HALF = 45,
+    /** 1/2卡片偏移 (40px) */
+    HALF = 40,
 
     /** -1/2卡片偏移 */
-    MINUS_HALF = -45
+    MINUS_HALF = -40
 }
 
 /**
  * 允许的偏移值数组
  */
 export const ALLOWED_OFFSETS: number[] = [
-    AllowedOffset.MINUS_HALF,  // -45
+    AllowedOffset.MINUS_HALF,  // -40
     AllowedOffset.ZERO,        // 0
-    AllowedOffset.HALF         // 45
+    AllowedOffset.HALF         // 40
 ];
 
 /**
@@ -508,13 +508,13 @@ export interface LayoutValidationResult {
 // ========== 网格系统常量 ==========
 
 /** 网格单元尺寸 (px) */
-export const GRID_UNIT = 90;
+export const GRID_UNIT = 80;
 
 /** 默认网格大小 (7×7) */
 export const DEFAULT_GRID_SIZE = 7;
 
 /** 1/2卡偏移 */
-export const OFFSET_HALF = 45;
+export const OFFSET_HALF = 40;
 
 /** 无偏移 */
 export const OFFSET_ZERO = 0;

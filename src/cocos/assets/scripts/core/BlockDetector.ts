@@ -7,14 +7,14 @@
  * 3. ✅ 遮挡规则：只要4个象限中有任意一个象限被上层卡片遮挡，整个卡片就不可点击！
  * 4. 只有4个象限全部未被遮挡（完全可见），卡片才可以点击！
  *
- * 象限划分（卡片尺寸90×90px，中心点为(0,0)）：
+ * 象限划分（卡片尺寸80×80px，中心点为(0,0)）：
  *      ┌─────────┬─────────┐
  *      │         │         │
  *      │    2    │    1    │  象限2(左上)  象限1(右上)
- *      │  (左上)  │  (右上)  │  45×45px     45×45px
+ *      │  (左上)  │  (右上)  │  40×40px     40×40px
  * (0,0)├─────────┼─────────┤  ← 中心点（横线+竖线）
  *      │    3    │    4    │  象限3(左下)  象限4(右下)
- *      │  (左下)  │  (右下)  │  45×45px     45×45px
+ *      │  (左下)  │  (右下)  │  40×40px     40×40px
  *      │         │         │
  *      └─────────┴─────────┘
  *
@@ -42,20 +42,20 @@ export class BlockDetector {
     /**
      * 卡片尺寸
      */
-    private static readonly CARD_SIZE = 90;
+    private static readonly CARD_SIZE = 80;
     /**
      * 子网格尺寸（卡片的1/2）
      */
-    private static readonly CELL = 45;
+    private static readonly CELL = 40;
 
     /**
      * 获取卡片的4个象限矩形
      *
      * 象限划分（以卡片中心为原点）：
-     * - 象限1（右上）：中心点右上方，45×45px
-     * - 象限2（左上）：中心点左上方，45×45px
-     * - 象限3（左下）：中心点左下方，45×45px
-     * - 象限4（右下）：中心点右下方，45×45px
+ * - 象限1（右上）：中心点右上方，40×40px
+ * - 象限2（左上）：中心点左上方，40×40px
+ * - 象限3（左下）：中心点左下方，40×40px
+ * - 象限4（右下）：中心点右下方，40×40px
      *
      * @param card 卡片
      * @param quadrant 象限
@@ -63,10 +63,10 @@ export class BlockDetector {
      */
     static getQuadrantRegion(card: Card, quadrant: Quadrant): Rect {
         const { rect } = card;
-        const cardWidth = rect.width;   // 90px
-        const cardHeight = rect.height; // 90px
-        const halfWidth = cardWidth / 2;   // 45px
-        const halfHeight = cardHeight / 2; // 45px
+        const cardWidth = rect.width;   // 80px
+        const cardHeight = rect.height; // 80px
+        const halfWidth = cardWidth / 2;   // 40px
+        const halfHeight = cardHeight / 2; // 40px
 
         // 卡片中心点坐标
         const centerX = rect.x + halfWidth;
@@ -77,32 +77,32 @@ export class BlockDetector {
                 return new Rect(
                     centerX,        // 从中心点开始
                     centerY,        // 从中心点开始
-                    halfWidth,      // 宽45px
-                    halfHeight      // 高45px
+                    halfWidth,      // 宽40px
+                    halfHeight      // 高40px
                 );
 
             case Quadrant.TOP_LEFT: // 象限2（左上）
                 return new Rect(
                     centerX - halfWidth,  // 中心点左侧
                     centerY,              // 从中心点开始
-                    halfWidth,            // 宽45px
-                    halfHeight            // 高45px
+                    halfWidth,            // 宽40px
+                    halfHeight            // 高40px
                 );
 
             case Quadrant.BOTTOM_LEFT: // 象限3（左下）
                 return new Rect(
                     centerX - halfWidth,  // 中心点左侧
                     centerY - halfHeight, // 中心点下方
-                    halfWidth,            // 宽45px
-                    halfHeight            // 高45px
+                    halfWidth,            // 宽40px
+                    halfHeight            // 高40px
                 );
 
             case Quadrant.BOTTOM_RIGHT: // 象限4（右下）
                 return new Rect(
                     centerX,              // 从中心点开始
                     centerY - halfHeight, // 中心点下方
-                    halfWidth,            // 宽45px
-                    halfHeight            // 高45px
+                    halfWidth,            // 宽40px
+                    halfHeight            // 高40px
                 );
         }
     }
@@ -138,8 +138,8 @@ export class BlockDetector {
     }
 
     /**
-     * 计算卡片占用的1/4网格（共4个45×45子网格）
-     * 子网格坐标采用全局统一CELL对齐（世界坐标/45向下取整）
+     * 计算卡片占用的1/4网格（共4个40×40子网格）
+     * 子网格坐标采用全局统一CELL对齐（世界坐标/40向下取整）
      */
     private static getOccupiedCells(card: Card): Array<{ x: number; y: number }> {
         const leftCell = Math.floor(card.rect.x / this.CELL);
