@@ -2,6 +2,7 @@ import { _decorator, Component, Node, Button, Toggle, ToggleContainer, director,
 import { AssetLoader } from '../core/AssetLoader';
 import { TimezoneSync } from '../services/TimezoneSync';
 import { GameMode, GAME_MODE_CONFIGS, DEFAULT_GAME_MODE, GAME_MODE_STORAGE_KEY } from '../data/GameMode';
+import { PreloadManager } from './PreloadManager';
 // 使用统一AssetLoader，完全利用Cocos Creator 3.8.7缓存机制
 
 const { ccclass, property } = _decorator;
@@ -54,6 +55,9 @@ export class MainMenu extends Component {
         }
         
         await this.loadRemoteAssets(); // 动态加载远程资源
+        
+        // 🚀 启动主菜单后台资源加载
+        this.startBackgroundResourceLoading();
         
     }
 
@@ -410,5 +414,24 @@ export class MainMenu extends Component {
             console.error(`[MainMenu] 加载Sprite失败: ${bundleName}/${assetPath}`, error);
             throw error;
         }
+    }
+
+    /**
+     * 🚀 启动主菜单后台资源加载
+     * 不阻塞UI，静默加载中优先级资源
+     */
+    private startBackgroundResourceLoading(): void {
+        console.log('[MainMenu] 🚀 启动后台资源加载...');
+        
+        // 异步加载，不阻塞主线程
+        setTimeout(async () => {
+            try {
+                const preloadManager = PreloadManager.getInstance();
+                await preloadManager.preloadMenuResources();
+                console.log('[MainMenu] ✅ 后台资源加载完成');
+            } catch (error) {
+                console.warn('[MainMenu] ⚠️ 后台资源加载失败:', error);
+            }
+        }, 1000); // 延迟1秒启动，确保主菜单UI已完全显示
     }
 }

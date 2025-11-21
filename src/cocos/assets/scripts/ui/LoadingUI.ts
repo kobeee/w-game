@@ -106,13 +106,13 @@ export class LoadingUI extends Component {
         this.preloadManager.setProgressCallback(this.onLoadingProgress.bind(this));
 
         try {
-            console.log('[LoadingUI] Point B: preloadAllBundles 开始');
-            // 执行预加载
-            await this.preloadManager.preloadAllBundles();
-            console.log('[LoadingUI] Point C: preloadAllBundles 完成');
+            console.log('[LoadingUI] Point B: preloadStartupBundles 开始');
+            // 🚀 执行优化后的启动阶段加载（仅核心资源）
+            await this.preloadManager.preloadStartupBundles();
+            console.log('[LoadingUI] Point C: preloadStartupBundles 完成');
 
-            // PreloadManager已在preloadAllBundles()中加载词库，无需重复
-            this.updateStatus(0.9, 'Bundle和词库加载完成');
+            // 🚀 PreloadManager已在preloadStartupBundles()中加载核心词库
+            this.updateStatus(0.85, '核心资源加载完成');
 
             // 验证词库是否加载成功
             const glossService = GlossService.getInstance();

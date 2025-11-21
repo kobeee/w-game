@@ -30,6 +30,47 @@ export class GlossService {
     }
 
     /**
+     * 🚀 仅加载扩展词库（用于主菜单后台加载）
+     * 前提：核心词库已经加载完成
+     */
+    async loadExtendedWordsOnly(): Promise<void> {
+        if (!this.isCoreLoaded) {
+            console.warn('[GlossService] ⚠️ 核心词库未加载，无法加载扩展词库');
+            return;
+        }
+
+        if (this.isExtendedLoaded) {
+            console.log('[GlossService] 📚 扩展词库已加载，跳过');
+            return;
+        }
+
+        console.log('[GlossService] 📚 开始加载扩展词库...');
+
+        try {
+            // 加载扩展词库文件
+            const extendedWords = await this.loadJsonFromBundle('words', 'words_extended');
+            const extendedGloss = await this.loadJsonFromBundle('words', 'zh_gloss_extended');
+
+            // 合并到现有词库
+            if (extendedWords) {
+                this.wordBank = { ...this.wordBank, ...extendedWords };
+            }
+
+            if (extendedGloss) {
+                for (const [word, meaning] of Object.entries(extendedGloss)) {
+                    this.glossDict.set(word.toUpperCase(), meaning as string);
+                }
+            }
+
+            this.isExtendedLoaded = true;
+            console.log('[GlossService] ✅ 扩展词库加载完成');
+
+        } catch (error) {
+            console.error('[GlossService] ❌ 扩展词库加载失败:', error);
+        }
+    }
+
+    /**
      * 加载词库（幂等操作，多次调用不会重复加载）
      * @param useExtended 是否加载扩展词库（8-10字母）
      */

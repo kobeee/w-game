@@ -13,6 +13,7 @@ import { DefinitionHintView } from '../ui/DefinitionHintView';
 import { WordStat, GameResult } from '../types/words';
 import { HINT_STAY_MS } from '../config/word-validate';
 import { WordPoolSelector, WordPoolConfig, Difficulty, WordPoolStrategy } from '../core/WordPoolSelector';
+import { PreloadManager } from './PreloadManager';
 
 const { ccclass, property } = _decorator;
 
@@ -348,6 +349,9 @@ export class StackGameApp extends Component {
         useGridLayout: boolean = true,
         layoutPath?: string
     ): Promise<void> {
+        // 🚀 加载叠叠乐专属资源（BloomFilter、布局文件等）
+        await this.loadStackGameResources();
+        
         // 在游戏真正开始时初始化WordMatcher（此时GlossService已加载）
         if (!this.wordMatcher) {
             this.initWordMatcher();
@@ -1156,5 +1160,18 @@ export class StackGameApp extends Component {
         this.gameState = GameState.ENDED;
         this.validationManager.clearPendingValidation();
         director.loadScene('MainMenu');
+    }
+
+    /**
+     * 🚀 加载叠叠乐专属资源（按需加载）
+     */
+    private async loadStackGameResources(): Promise<void> {
+        try {
+            const preloadManager = PreloadManager.getInstance();
+            await preloadManager.loadGameSpecificResources('stack');
+            console.log('[StackGameApp] 🚀 叠叠乐专属资源加载完成');
+        } catch (error) {
+            console.warn('[StackGameApp] ⚠️ 叠叠乐资源加载失败，将按需加载:', error);
+        }
     }
 }

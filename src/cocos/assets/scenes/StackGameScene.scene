@@ -414,7 +414,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -219.4619140625,
+      "x": -219.44777651504728,
       "y": 0,
       "z": 0
     },
@@ -453,8 +453,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 92.67578125,
-      "height": 54.4
+      "width": 92.66057810178945,
+      "height": 54.400000000000006
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -486,7 +486,7 @@
     "_string": "分数: 0",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 28,
+    "_actualFontSize": 29.805097451274364,
     "_fontSize": 28,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
@@ -546,7 +546,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 181.337890625,
+      "x": 181.33028905089478,
       "y": 0,
       "z": 0
     },
@@ -585,8 +585,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 168.923828125,
-      "height": 54.4
+      "width": 168.89555303009465,
+      "height": 54.400000000000006
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -618,7 +618,7 @@
     "_string": "清除率: 0.0%",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 28,
+    "_actualFontSize": 29.805097451274364,
     "_fontSize": 28,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
@@ -669,7 +669,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 571.599609375,
+      "width": 571.5561311318841,
       "height": 60
     },
     "_anchorPoint": {
@@ -1318,7 +1318,7 @@
     "_string": "✓ 消除",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 30,
+    "_actualFontSize": 31.934032983508246,
     "_fontSize": 30,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
@@ -1630,7 +1630,7 @@
     "_string": "⏭ 继续拼",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 30,
+    "_actualFontSize": 31.934032983508246,
     "_fontSize": 30,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
@@ -2045,7 +2045,7 @@
     "_string": "结束游戏",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 27,
+    "_actualFontSize": 28.74062968515742,
     "_fontSize": 27,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
@@ -2055,7 +2055,7 @@
     "_isSystemFontUsed": true,
     "_spacingX": 0,
     "_isItalic": false,
-    "_isBold": false,
+    "_isBold": true,
     "_isUnderline": false,
     "_underlineHeight": 2,
     "_cacheMode": 0,
@@ -2121,9 +2121,9 @@
     "_dstBlendFactor": 4,
     "_color": {
       "__type__": "cc.Color",
-      "r": 209,
-      "g": 4,
-      "b": 4,
+      "r": 255,
+      "g": 0,
+      "b": 0,
       "a": 255
     },
     "_spriteFrame": {
@@ -2160,9 +2160,9 @@
     "_transition": 1,
     "_normalColor": {
       "__type__": "cc.Color",
-      "r": 209,
-      "g": 4,
-      "b": 4,
+      "r": 255,
+      "g": 0,
+      "b": 0,
       "a": 255
     },
     "_hoverColor": {

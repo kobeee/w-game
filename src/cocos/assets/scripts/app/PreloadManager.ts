@@ -1,5 +1,6 @@
 import { _decorator, assetManager, SpriteFrame, JsonAsset } from 'cc';
 import { GlossService } from '../data/GlossService';
+import { AssetLoader } from '../core/AssetLoader';
 
 const { ccclass } = _decorator;
 
@@ -12,18 +13,22 @@ export class PreloadManager {
 
     private static _instance: PreloadManager = null;
 
-    // 需要预加载的Bundle配置
+    // 需要预加载的Bundle配置（按优先级分组）
     private readonly BUNDLES_TO_PRELOAD = [
-        { name: 'bg', priority: 1 },
-        { name: 'title', priority: 1 },
-        { name: 'tiles', priority: 1 },        // 字母瓦片资源，高优先级
-        { name: 'slot', priority: 1 },         // 牌槽背景资源，高优先级（StackGame依赖）
-        { name: 'words', priority: 1 },        // 词库资源，高优先级（核心功能依赖）
-        { name: 'modal', priority: 2 }
+        // 🔥 高优先级：启动必需资源（加载场景必须完成）
+        { name: 'bg', priority: 1, phase: 'startup' },
+        { name: 'title', priority: 1, phase: 'startup' },
+        { name: 'tiles', priority: 1, phase: 'startup' },        // 字母瓦片资源，高优先级
+        { name: 'slot', priority: 1, phase: 'startup' },         // 牌槽背景资源，高优先级（StackGame依赖）
+        { name: 'words', priority: 1, phase: 'startup' },        // 词库资源，高优先级（核心功能依赖）
+        
+        // 🚀 中优先级：主菜单后台静默加载
+        { name: 'modal', priority: 2, phase: 'menu' }
     ];
     
-    // 每个Bundle内需要预加载的关键资源
+    // 每个Bundle内需要预加载的关键资源（按阶段分离）
     private readonly ASSETS_TO_PRELOAD = {
+        // 🏁 启动阶段：必须加载的资源
         'bg': [
             'main_scene_bg/spriteFrame',
             'game_scene_bg/spriteFrame',
@@ -43,13 +48,23 @@ export class PreloadManager {
             'slot_item/spriteFrame'    // 牌槽背景图
         ],
         'words': [
-            'words_core',          // 核心词库（3-7字母）
-            'zh_gloss',            // 核心词义库
-            'words_extended',      // 扩展词库（8-10字母）
-            'zh_gloss_extended'    // 扩展词义库
+            'words_core',          // 核心词库（3-7字母）- 启动必需
+            'zh_gloss'             // 核心词义库 - 启动必需
+            // 'words_extended',    // 扩展词库（8-10字母）- 延迟到主菜单
+            // 'zh_gloss_extended'  // 扩展词义库 - 延迟到主菜单
         ],
+        
+        // 📱 主菜单阶段：后台静默加载
         'modal': [
             'pop_card/spriteFrame'
+        ]
+    };
+    
+    // 延迟加载资源配置（主菜单阶段加载）
+    private readonly DELAYED_ASSETS = {
+        'words': [
+            'words_extended',      // 扩展词库（8-10字母）
+            'zh_gloss_extended'    // 扩展词义库
         ]
     };
     
@@ -72,61 +87,187 @@ export class PreloadManager {
     }
     
     /**
-     * 开始完全加载所有远程Bundle（确保立即可用）
+     * 🚀 优化版：按阶段优先级加载资源
+     * 启动阶段仅加载必需资源，大幅缩短首次加载时间
      */
-    public async preloadAllBundles(): Promise<void> {
-        this.reportProgress(0, '正在初始化完全资源加载...');
+    public async preloadStartupBundles(): Promise<void> {
+        this.reportProgress(0, '正在初始化核心资源加载...');
 
         try {
-            // 按优先级分组
-            const highPriorityBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.priority === 1);
-            const lowPriorityBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.priority === 2);
+            // 🔥 启动阶段：仅加载高优先级必需资源
+            const startupBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.phase === 'startup');
+            await this.preloadBundleGroup(startupBundles, 0, 0.6);
 
-            // 高优先级Bundle并行加载
-            await this.preloadBundleGroup(highPriorityBundles, 0, 0.7);
+            // 📚 核心词库加载（分配独立进度 0.6 → 0.8）
+            await this.loadGlossDataWithProgress(0.6, 0.8, false); // 仅加载核心词库
 
-            // ✅ 加载词库数据（分配独立进度 0.7 → 0.85）
-            await this.loadGlossDataWithProgress(0.7, 0.85);
-
-            // 低优先级Bundle后续加载
-            await this.preloadBundleGroup(lowPriorityBundles, 0.85, 1.0);
-
-            this.reportProgress(1.0, '所有资源完全加载完成，立即可用');
+            this.reportProgress(0.8, '核心资源加载完成，可以进入游戏');
 
         } catch (error) {
-            console.error('[PreloadManager] Bundle完全加载失败:', error);
-            this.reportProgress(0.8, '资源加载完成（部分资源使用缓存）');
-            // 不抛出错误，允许游戏继续运行
+            console.error('[PreloadManager] 启动资源加载失败:', error);
+            this.reportProgress(0.75, '核心资源加载完成（部分使用缓存）');
         }
     }
 
     /**
-     * 加载词库数据（确保WordMatcher初始化前完成）
-     * @param useExtended 是否加载扩展词库（默认true，一次性加载全部）
+     * 📱 主菜单阶段：后台静默加载中优先级资源
      */
-    private async loadGlossData(useExtended: boolean = true): Promise<void> {
-        
+    public async preloadMenuResources(): Promise<void> {
+        console.log('[PreloadManager] 📱 开始后台加载主菜单资源...');
 
+        try {
+            // 🚀 中优先级Bundle加载
+            const menuBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.phase === 'menu');
+            await this.preloadBundleGroup(menuBundles, 0, 0.5);
+
+            // 📚 扩展词库加载
+            await this.loadDelayedGlossData(0.5, 1.0);
+
+            console.log('[PreloadManager] ✅ 主菜单资源加载完成');
+
+        } catch (error) {
+            console.warn('[PreloadManager] 主菜单资源加载失败，将使用按需加载:', error);
+        }
+    }
+
+    /**
+     * 🎮 游戏内延迟加载（用于叠叠乐等特定场景）
+     */
+    public async loadGameSpecificResources(gameType: 'basic' | 'stack'): Promise<void> {
+        if (gameType === 'stack') {
+            console.log('[PreloadManager] 🎮 开始加载叠叠乐专属资源...');
+            await this.loadStackGameResources();
+        }
+    }
+
+    /**
+     * 📦 叠叠乐专属资源加载
+     */
+    private async loadStackGameResources(): Promise<void> {
+        try {
+            // 🌸 BloomFilter 快速否定层
+            await this.loadBloomFilter();
+
+            // 📋 布局JSON文件
+            await this.loadLayoutFiles();
+
+            console.log('[PreloadManager] ✅ 叠叠乐专属资源加载完成');
+        } catch (error) {
+            console.warn('[PreloadManager] 叠叠乐资源加载失败，将按需加载:', error);
+        }
+    }
+
+    /**
+     * 🌸 加载 BloomFilter（快速否定层）
+     */
+    private async loadBloomFilter(): Promise<void> {
+        // 动态导入 BloomFilter，避免启动时加载
+        try {
+            const { loadBloomFromBundle } = await import('../services/BloomFilter');
+            await loadBloomFromBundle();
+            console.log('[PreloadManager] 🌸 BloomFilter 加载完成');
+        } catch (error) {
+            console.warn('[PreloadManager] 🌸 BloomFilter 加载失败:', error);
+        }
+    }
+
+    /**
+     * 📋 加载布局JSON文件
+     */
+    private async loadLayoutFiles(): Promise<void> {
+        try {
+            const assetLoader = AssetLoader.getInstance();
+            // 预加载常用布局文件
+            const layoutFiles = [
+                'layouts/stack_center_tower',
+                'layouts/stack_cross_towers',
+                'layouts/stack_diagonal_ridge',
+                'layouts/stack_ring_fortress',
+                'layouts/stack_multi_towers',
+                'layouts/sheep_style_complex'
+            ];
+
+            for (const layoutPath of layoutFiles) {
+                try {
+                    await assetLoader.loadJsonAsset(layoutPath);
+                } catch (e) {
+                    console.warn(`[PreloadManager] 布局文件 ${layoutPath} 预加载失败，将按需加载`);
+                }
+            }
+
+            console.log('[PreloadManager] 📋 布局文件预加载完成');
+        } catch (error) {
+            console.warn('[PreloadManager] 布局文件加载失败:', error);
+        }
+    }
+
+    /**
+     * 📚 加载延迟词库数据（扩展词库）
+     */
+    private async loadDelayedGlossData(startProgress: number, endProgress: number): Promise<void> {
+        this.reportProgress(startProgress, '正在加载扩展词库...');
+
+        try {
+            const wordsBundle = this.getLoadedBundle('words');
+            if (!wordsBundle) {
+                console.warn('[PreloadManager] words Bundle 未加载，跳过扩展词库');
+                return;
+            }
+
+            const glossService = GlossService.getInstance();
+            
+            // 加载扩展词库
+            const midProgress = startProgress + (endProgress - startProgress) * 0.5;
+            this.reportProgress(midProgress, '正在加载扩展词库数据...');
+
+            await glossService.loadExtendedWordsOnly();
+
+            this.reportProgress(endProgress, '扩展词库加载完成');
+
+        } catch (error) {
+            console.warn('[PreloadManager] 扩展词库加载失败:', error);
+            this.reportProgress(endProgress, '扩展词库加载失败，将使用核心词库');
+        }
+    }
+
+    /**
+     * 🔄 兼容性方法：保持向后兼容
+     * @deprecated 建议使用 preloadStartupBundles() 和 preloadMenuResources()
+     */
+    public async preloadAllBundles(): Promise<void> {
+        console.warn('[PreloadManager] ⚠️ preloadAllBundles() 已废弃，请使用新的分阶段加载');
+        
+        // 为保持兼容性，执行完整的启动加载
+        await this.preloadStartupBundles();
+        
+        // 静默加载主菜单资源（不阻塞）
+        this.preloadMenuResources().catch(e => 
+            console.warn('[PreloadManager] 主菜单资源后台加载失败:', e)
+        );
+    }
+
+    /**
+     * 加载词库数据（确保WordMatcher初始化前完成）
+     * @param useExtended 是否加载扩展词库（默认false，启动阶段仅加载核心）
+     */
+    private async loadGlossData(useExtended: boolean = false): Promise<void> {
         try {
             // 检查 Bundle 是否已加载
             const wordsBundle = assetManager.getBundle('words');
             if (!wordsBundle) {
                 console.error('[PreloadManager] ❌ 严重错误：words Bundle 未加载！');
-                console.error('[PreloadManager] PreloadManager.preloadAllBundles() 应该已加载 words Bundle');
+                console.error('[PreloadManager] preloadStartupBundles() 应该已加载 words Bundle');
                 return;
             }
-            
 
             // 直接调用 GlossService（不使用动态import）
             const glossService = GlossService.getInstance();
 
-            // 一次性加载核心+扩展词库（避免二次加载）
+            // 根据阶段决定加载范围
             await glossService.load(useExtended);
 
             const allWords = glossService.getAllWords();
             const loadStatus = glossService.getLoadStatus();
-
-            
 
             if (allWords.length === 0) {
                 console.error('[PreloadManager] ❌ 词库为空！');
@@ -135,28 +276,27 @@ export class PreloadManager {
                 console.error('[PreloadManager]   2. words_core.json 是否能被 GlossService.loadJsonFromBundle 访问');
                 console.error('[PreloadManager]   3. words_core.json 的 JSON 结构是否正确');
             }
-
         } catch (error) {
             console.error('[PreloadManager] ❌ 词库数据加载失败:', error);
             console.error('[PreloadManager] 错误堆栈:', error instanceof Error ? error.stack : '');
         }
-        
     }
 
     /**
      * 加载词库数据（带进度报告）
      * @param startProgress 开始进度
      * @param endProgress 结束进度
+     * @param useExtended 是否加载扩展词库（默认false，启动阶段仅加载核心）
      */
-    private async loadGlossDataWithProgress(startProgress: number, endProgress: number): Promise<void> {
-        this.reportProgress(startProgress, '正在加载词库数据...');
+    private async loadGlossDataWithProgress(startProgress: number, endProgress: number, useExtended: boolean = false): Promise<void> {
+        this.reportProgress(startProgress, `正在加载${useExtended ? '完整' : '核心'}词库数据...`);
 
         try {
             // 检查 Bundle 是否已加载
             const wordsBundle = assetManager.getBundle('words');
             if (!wordsBundle) {
                 console.error('[PreloadManager] ❌ 严重错误：words Bundle 未加载！');
-                console.error('[PreloadManager] PreloadManager.preloadAllBundles() 应该已加载 words Bundle');
+                console.error('[PreloadManager] preloadStartupBundles() 应该已加载 words Bundle');
                 return;
             }
 
@@ -167,13 +307,13 @@ export class PreloadManager {
             // 直接调用 GlossService（不使用动态import）
             const glossService = GlossService.getInstance();
 
-            // 一次性加载核心+扩展词库（避免二次加载）
-            await glossService.load(true);
+            // 根据阶段决定加载范围
+            await glossService.load(useExtended);
 
             const allWords = glossService.getAllWords();
             const loadStatus = glossService.getLoadStatus();
 
-            this.reportProgress(endProgress, `词库加载完成，共 ${allWords.length} 个单词`);
+            this.reportProgress(endProgress, `${useExtended ? '完整' : '核心'}词库加载完成，共 ${allWords.length} 个单词`);
 
             if (allWords.length === 0) {
                 console.error('[PreloadManager] ❌ 词库为空！');

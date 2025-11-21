@@ -1,5 +1,82 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-11-21 - 🚀 [PERF] 资源加载优先级优化（分场景加载策略）
+
+### 背景
+- 当前所有资源在加载场景一次性加载，导致首次进入游戏等待时间过长（30-60秒）
+- 60秒超时强制跳转机制表明加载时间已超出用户容忍范围
+- 需要按资源优先级分阶段加载，提升用户体验
+
+### 核心优化策略
+
+#### 🎯 三阶段加载模型
+**启动阶段（0-80%进度）** - 仅加载核心必需资源
+- `bg` Bundle - 主背景图（主菜单、游戏、结果页）
+- `title` Bundle - 标题图（主菜单UI）
+- `tiles` Bundle - 字母瓦片（核心游戏元素）
+- `slot` Bundle - 牌槽背景（叠叠乐必需）
+- `words_core.json` + `zh_gloss.json` - 核心词库（3-7字母）
+
+**主菜单阶段（后台静默）** - 不阻塞用户操作
+- `modal` Bundle - 弹窗卡片（为结果页准备）
+- `words_extended.json` + `zh_gloss_extended.json` - 扩展词库（8-10字母）
+
+**叠叠乐阶段（按需加载）** - 进入特定场景才加载
+- **BloomFilter** - 快速否定层（仅网络验证需要）
+- **布局JSON文件** - 叠叠乐布局文件（仅叠叠乐模式需要）
+
+#### 🔧 技术实现
+
+#### 1. PreloadManager 重构
+```typescript
+// 🚀 新增分阶段加载方法
+preloadStartupBundles()    // 启动必需资源
+preloadMenuResources()     // 主菜单后台资源  
+loadGameSpecificResources() // 游戏专属资源
+
+// 🔄 保持向后兼容
+preloadAllBundles()        // 兼容老代码，内部调用新方法
+```
+
+#### 2. LoadingUI 优化
+- 使用 `preloadStartupBundles()` 替代 `preloadAllBundles()`
+- 进度分配：启动阶段0-80%，词库加载80-85%，延迟跳转85-100%
+- 缩短首次加载时间从30-60秒到10-15秒
+
+#### 3. MainMenu 后台加载
+- 主菜单显示1秒后静默加载中优先级资源
+- 不阻塞UI操作，用户可立即开始游戏
+
+#### 4. StackGameApp 按需加载
+- 进入叠叠乐时加载BloomFilter和布局文件
+- 避免启动阶段加载非必需资源
+
+#### 5. GlossService 支持分批加载
+- 新增 `loadExtendedWordsOnly()` 方法
+- 支持核心词库和扩展词库分离加载
+
+### 修改文件
+- `src/cocos/assets/scripts/app/PreloadManager.ts` - 重构为分阶段加载
+- `src/cocos/assets/scripts/ui/LoadingUI.ts` - 使用优化后的启动加载
+- `src/cocos/assets/scripts/app/MainMenu.ts` - 添加后台资源加载
+- `src/cocos/assets/scripts/app/StackGameApp.ts` - 叠叠乐按需加载
+- `src/cocos/assets/scripts/data/GlossService.ts` - 支持扩展词库单独加载
+
+### 效果预期
+- **首次进入时间**：从30-60秒缩短到10-15秒（减少60%+）
+- **用户体验**：快速进入主菜单，后台加载不阻塞
+- **缓存机制**：第二次加载几乎瞬时完成（<1秒）
+- **兼容性**：保持向后兼容，老代码仍可正常运行
+- **资源利用**：按需加载，避免无效资源占用内存
+
+### 验证方法
+1. 清除缓存后首次进入游戏，观察加载时间是否缩短到15秒内
+2. 检查主菜单是否可立即操作，后台资源是否静默加载
+3. 进入叠叠乐场景，确认BloomFilter和布局文件按需加载
+4. 第二次进入游戏，验证缓存命中和瞬时加载
+
+---
+
 ## 2025-11-21 - 🔧 [BUGFIX] BloomFilter 微信小游戏 Base64 解码兼容性修复
 
 ### 问题现象
