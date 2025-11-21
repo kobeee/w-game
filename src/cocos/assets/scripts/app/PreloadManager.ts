@@ -85,11 +85,11 @@ export class PreloadManager {
             // 高优先级Bundle并行加载
             await this.preloadBundleGroup(highPriorityBundles, 0, 0.7);
 
-            // ✅ 加载词库数据（确保WordMatcher初始化前完成）
-            await this.loadGlossData();
+            // ✅ 加载词库数据（分配独立进度 0.7 → 0.85）
+            await this.loadGlossDataWithProgress(0.7, 0.85);
 
             // 低优先级Bundle后续加载
-            await this.preloadBundleGroup(lowPriorityBundles, 0.7, 1.0);
+            await this.preloadBundleGroup(lowPriorityBundles, 0.85, 1.0);
 
             this.reportProgress(1.0, '所有资源完全加载完成，立即可用');
 
@@ -141,6 +141,53 @@ export class PreloadManager {
             console.error('[PreloadManager] 错误堆栈:', error instanceof Error ? error.stack : '');
         }
         
+    }
+
+    /**
+     * 加载词库数据（带进度报告）
+     * @param startProgress 开始进度
+     * @param endProgress 结束进度
+     */
+    private async loadGlossDataWithProgress(startProgress: number, endProgress: number): Promise<void> {
+        this.reportProgress(startProgress, '正在加载词库数据...');
+
+        try {
+            // 检查 Bundle 是否已加载
+            const wordsBundle = assetManager.getBundle('words');
+            if (!wordsBundle) {
+                console.error('[PreloadManager] ❌ 严重错误：words Bundle 未加载！');
+                console.error('[PreloadManager] PreloadManager.preloadAllBundles() 应该已加载 words Bundle');
+                return;
+            }
+
+            // 中间进度点
+            const midProgress = startProgress + (endProgress - startProgress) * 0.5;
+            this.reportProgress(midProgress, '正在初始化词库服务...');
+
+            // 直接调用 GlossService（不使用动态import）
+            const glossService = GlossService.getInstance();
+
+            // 一次性加载核心+扩展词库（避免二次加载）
+            await glossService.load(true);
+
+            const allWords = glossService.getAllWords();
+            const loadStatus = glossService.getLoadStatus();
+
+            this.reportProgress(endProgress, `词库加载完成，共 ${allWords.length} 个单词`);
+
+            if (allWords.length === 0) {
+                console.error('[PreloadManager] ❌ 词库为空！');
+                console.error('[PreloadManager] 检查项:');
+                console.error('[PreloadManager]   1. words_core.json 是否存在');
+                console.error('[PreloadManager]   2. words_core.json 是否能被 GlossService.loadJsonFromBundle 访问');
+                console.error('[PreloadManager]   3. words_core.json 的 JSON 结构是否正确');
+            }
+
+        } catch (error) {
+            console.error('[PreloadManager] ❌ 词库数据加载失败:', error);
+            console.error('[PreloadManager] 错误堆栈:', error instanceof Error ? error.stack : '');
+            this.reportProgress(endProgress, '词库加载失败，将使用离线缓存');
+        }
     }
     
     /**

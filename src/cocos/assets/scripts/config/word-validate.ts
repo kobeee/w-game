@@ -43,7 +43,7 @@ export const WIKI_WORKER_ENDPOINT = 'https://ai.elvis1949.cloudns.pro/wiktionary
 export const BLOOM_PATH = 'assets/bundle/words/english.bloom'; // 资源相对路径（若不存在则自动跳过）
 export const BLOOM_FPR = 0.01 as const; // 目标误判率（构建时参考）
 export const BLOOM_ASSET = 'english.bloom' as const; // 在 words Bundle 内的资源名（优先）
-export const BLOOM_ASSET_TXT = 'english.bloom.txt' as const; // Base64 文本资产（编辑器/预览优先）
+export const BLOOM_ASSET_TXT = 'english.bloom' as const; // Base64 文本资产（Cocos可能去掉了.txt扩展名）
 
 // ==== 调试开关（排查用，问题定位后请改回 false） ====
 export const WORD_DEBUG = true as const;

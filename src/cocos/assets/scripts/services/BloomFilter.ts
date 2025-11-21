@@ -7,42 +7,144 @@ class BloomFilterCore {
     private k!: number; // number of hash functions
     private ready = false;
 
+    /**
+     * 微信小游戏兼容的 Base64 解码方法
+     * @param base64String Base64 编码的字符串
+     */
+    private base64Decode(base64String: string): string {
+        // 检查是否在微信小游戏环境
+        if (typeof wx !== 'undefined' && wx.getFileSystemManager) {
+            // 微信小游戏环境，使用 wx.getFileSystemManager().readFileSync 的 base64 解码
+            try {
+                const fs = wx.getFileSystemManager();
+                // 创建临时文件路径
+                const tempFilePath = `${wx.env.USER_DATA_PATH}/temp_base64_${Date.now()}.txt`;
+                // 写入 base64 数据
+                fs.writeFileSync(tempFilePath, base64String, 'base64');
+                // 读取为二进制数据再转回字符串
+                const buffer = fs.readFileSync(tempFilePath);
+                // 删除临时文件
+                try {
+                    fs.unlinkSync(tempFilePath);
+                } catch (e) {
+                    // 忽略删除错误
+                }
+                // 将 ArrayBuffer 转换为字符串
+                return String.fromCharCode.apply(null, new Uint8Array(buffer));
+            } catch (e) {
+                console.warn('[BloomFilter] 微信小游戏 Base64 解码失败，回退到手动解码:', e);
+            }
+        }
+        
+        // 回退方案：手动实现 Base64 解码（兼容所有环境）
+        return this.manualBase64Decode(base64String);
+    }
+
+    /**
+     * 手动实现 Base64 解码（不依赖 atob）
+     * @param base64String Base64 编码的字符串
+     */
+    private manualBase64Decode(base64String: string): string {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+        let result = '';
+        let buffer = 0;
+        let bufferBits = 0;
+        
+        // 移除空白字符
+        base64String = base64String.replace(/[^A-Za-z0-9+/]/g, '');
+        
+        for (let i = 0; i < base64String.length; i++) {
+            const char = base64String[i];
+            const value = chars.indexOf(char);
+            
+            if (value === -1) continue; // 跳过无效字符
+            
+            buffer = (buffer << 6) | value;
+            bufferBits += 6;
+            
+            if (bufferBits >= 8) {
+                bufferBits -= 8;
+                result += String.fromCharCode((buffer >> bufferBits) & 0xFF);
+            }
+        }
+        
+        return result;
+    }
+
     async load(): Promise<boolean> {
         console.log('[BloomFilter] 开始加载布隆过滤器...');
         try {
-            const bundle = await new Promise<any>((resolve, reject) => {
-                const cached = assetManager.getBundle('words');
-                if (cached) {
-                    console.log('[BloomFilter] 使用缓存的 words bundle');
-                    resolve(cached);
+            // 等待words bundle加载完成，最多等待10秒
+            const bundle = await this.waitForBundle('words', 10000);
+            if (!bundle) {
+                console.error('[BloomFilter] words bundle 加载超时或失败');
+                this.ready = false;
+                return false;
+            }
+
+            console.log('[BloomFilter] words bundle 已就绪，开始加载 Base64 文本资产...');
+
+            // 首先列出bundle中的所有资源，用于调试
+            const bundleResources = bundle.getDirWithPath('.');
+            console.log('[BloomFilter] Bundle 中的所有资源:', bundleResources);
+            
+            // 检查 bundle 配置信息
+            const assetInfos = bundle._config.assetInfos || {};
+            console.log('[BloomFilter] Bundle 中的所有资源信息:', Object.keys(assetInfos));
+            
+            // 详细检查每个相关资源
+            const possibleNames = ['english.bloom.txt', 'english.bloom', 'english.bloom.txt'];
+            for (const name of possibleNames) {
+                const info = assetInfos[name];
+                if (info) {
+                    console.log(`[BloomFilter] 资源 ${name} 配置信息:`, info);
                 } else {
-                    console.log('[BloomFilter] 加载 words bundle...');
-                    assetManager.loadBundle('words', (err, b) => {
-                        if (err || !b) {
-                            console.error('[BloomFilter] words bundle 加载失败:', err);
-                            reject(err || new Error('LOAD_BUNDLE_FAIL'));
+                    console.log(`[BloomFilter] 资源 ${name} 未在配置中找到`);
+                }
+            }
+
+            // 尝试多种资源名称加载
+            const assetNames = [
+                BLOOM_ASSET_TXT,                    // 'english.bloom' (配置中的名称)
+                'english.bloom.txt',                // 带完整 .txt 扩展名
+                'english.bloom'                     // 不带扩展名（Cocos可能的处理结果）
+            ];
+
+            let bufferFromTxt: ArrayBuffer | null = null;
+            let lastError: any = null;
+
+            for (const assetName of assetNames) {
+                console.log(`[BloomFilter] 尝试加载资源: ${assetName}`);
+                
+                bufferFromTxt = await new Promise((resolve) => {
+                    bundle.load(assetName, TextAsset, (e: any, txt: TextAsset) => {
+                        if (!e && txt && typeof txt.text === 'string' && txt.text.length > 0) {
+                            try {
+                                // 使用微信小游戏兼容的 Base64 解码方法
+                                const bin = this.base64Decode(txt.text.trim());
+                                const arr = new Uint8Array(bin.length);
+                                for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                                console.log(`[BloomFilter] 成功加载资源: ${assetName}`);
+                                resolve(arr.buffer);
+                            } catch (error) {
+                                console.error(`[BloomFilter] Base64 解码失败 (${assetName}):`, error);
+                                resolve(null);
+                            }
                         } else {
-                            console.log('[BloomFilter] words bundle 加载成功');
-                            resolve(b);
+                            console.error(`[BloomFilter] 资源加载失败 (${assetName}):`, e);
+                            console.error(`[BloomFilter] txt 对象 (${assetName}):`, txt);
+                            console.error(`[BloomFilter] txt.text 类型 (${assetName}):`, typeof txt?.text);
+                            console.error(`[BloomFilter] txt.text 长度 (${assetName}):`, txt?.text?.length);
+                            lastError = e;
+                            resolve(null);
                         }
                     });
-                }
-            });
-
-            const bufferFromTxt: ArrayBuffer | null = await new Promise((resolve) => {
-                bundle.load(BLOOM_ASSET_TXT, TextAsset, (e: any, txt: TextAsset) => {
-                    if (!e && txt && typeof txt.text === 'string' && txt.text.length > 0) {
-                        try {
-                            const bin = atob(txt.text.trim());
-                            const arr = new Uint8Array(bin.length);
-                            for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-                            resolve(arr.buffer);
-                        } catch { resolve(null); }
-                    } else {
-                        resolve(null);
-                    }
                 });
-            });
+
+                if (bufferFromTxt) {
+                    break; // 成功加载，退出循环
+                }
+            }
 
             if (bufferFromTxt) {
                 console.log('[BloomFilter] 从 Base64 文本资产加载成功');
@@ -58,6 +160,40 @@ class BloomFilterCore {
             this.ready = false;
             return false;
         }
+    }
+
+    /**
+     * 等待指定bundle加载完成
+     * @param bundleName bundle名称
+     * @param timeoutMs 超时时间（毫秒）
+     */
+    private async waitForBundle(bundleName: string, timeoutMs: number): Promise<assetManager.Bundle | null> {
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < timeoutMs) {
+            const cached = assetManager.getBundle(bundleName);
+            if (cached) {
+                console.log(`[BloomFilter] ${bundleName} bundle 已在缓存中`);
+                return cached;
+            }
+            
+            // 等待100ms后重试
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        // 如果等待超时，尝试手动加载
+        console.log(`[BloomFilter] 等待 ${bundleName} bundle 超时，尝试手动加载...`);
+        return new Promise((resolve) => {
+            assetManager.loadBundle(bundleName, (err, bundle) => {
+                if (err || !bundle) {
+                    console.error(`[BloomFilter] 手动加载 ${bundleName} bundle 失败:`, err);
+                    resolve(null);
+                } else {
+                    console.log(`[BloomFilter] 手动加载 ${bundleName} bundle 成功`);
+                    resolve(bundle);
+                }
+            });
+        });
     }
 
     private parse(buf: ArrayBuffer): void {

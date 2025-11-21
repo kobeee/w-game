@@ -39,11 +39,34 @@ export class LoadingUI extends Component {
     private preloadManager: PreloadManager = null!;
     
     protected onLoad(): void {
+        // 监听微信生命周期
+        if (typeof wx !== 'undefined') {
+            wx.onMemoryWarning(() => {
+                console.warn('[LoadingUI] ⚠️ 微信内存警告触发！');
+            });
+
+            wx.onHide(() => {
+                console.warn('[LoadingUI] ⚠️ 小游戏进入后台！');
+            });
+
+            wx.onShow(() => {
+                console.log('[LoadingUI] ✅ 小游戏回到前台');
+            });
+        }
+
         this.preloadManager = PreloadManager.getInstance();
         this.initializeUI();
     }
     
     protected start(): void {
+        // ✅ 强制超时跳转（60秒兜底）- 使用原生 setTimeout
+        setTimeout(() => {
+            if (this.node && this.node.isValid) {
+                console.error('[LoadingUI] ⏰ 加载超时（60秒），强制跳转！');
+                director.loadScene('MainMenu');
+            }
+        }, 60000); // 60秒 = 60000毫秒
+
         this.startLoading();
     }
     
@@ -77,13 +100,16 @@ export class LoadingUI extends Component {
      * 开始加载流程
      */
     private async startLoading(): Promise<void> {
+        console.log('[LoadingUI] Point A: 开始加载流程...');
 
         // 设置进度回调
         this.preloadManager.setProgressCallback(this.onLoadingProgress.bind(this));
 
         try {
+            console.log('[LoadingUI] Point B: preloadAllBundles 开始');
             // 执行预加载
             await this.preloadManager.preloadAllBundles();
+            console.log('[LoadingUI] Point C: preloadAllBundles 完成');
 
             // PreloadManager已在preloadAllBundles()中加载词库，无需重复
             this.updateStatus(0.9, 'Bundle和词库加载完成');
@@ -100,25 +126,51 @@ export class LoadingUI extends Component {
 
                 const retryWords = glossService.getAllWords();
                 if (retryWords.length > 0) {
-                    
+                    console.log('[LoadingUI] ✅ 词库修复成功，词库包含', retryWords.length, '个单词');
                 } else {
-                    console.error('[LoadingUI] ❌ 词库修复失败，游戏可能无法正常运行');
+                    console.error('[LoadingUI] ❌ 词库修复失败，词库为空，无法启动游戏');
+                    this.updateStatus(0.98, '词库加载失败，请检查网络连接后重试');
+                    
+                    // 显示错误信息并停止加载
+                    if (this.statusLabel) {
+                        this.statusLabel.string = '词库加载失败\n请检查网络连接后重新进入游戏';
+                    }
+                    
+                    // 不继续跳转，保持在加载页面
+                    return;
                 }
+            } else {
+                console.log('[LoadingUI] ✅ 词库验证成功，词库包含', allWords.length, '个单词');
             }
 
+            console.log('[LoadingUI] Point D: 更新进度到 100%');
             this.updateStatus(1.0, '所有资源加载完成！');
 
-            // 加载完成，延迟一下再跳转
-            this.scheduleOnce(() => {
-                this.navigateToMainMenu();
-            }, 1.0);
+            console.log('[LoadingUI] Point E: 延迟开始（1秒）');
+            // ✅ 使用 Promise + setTimeout 替代 scheduleOnce
+            await new Promise<void>(resolve => {
+                setTimeout(() => {
+                    console.log('[LoadingUI] 延迟结束，准备跳转...');
+                    resolve();
+                }, 1000);
+            });
+
+            console.log('[LoadingUI] Point F: 调用 navigateToMainMenu()');
+            // ✅ 直接调用跳转，不依赖 scheduleOnce
+            this.navigateToMainMenu();
 
         } catch (error) {
-            console.error('[LoadingUI] 预加载过程出现错误:', error);
-            // 即使出错也跳转到主菜单
-            this.scheduleOnce(() => {
-                this.navigateToMainMenu();
-            }, 2.0);
+            console.error('[LoadingUI] Point ERROR:', error);
+            // ✅ 错误分支也使用 Promise + setTimeout
+            await new Promise<void>(resolve => {
+                setTimeout(() => {
+                    console.log('[LoadingUI] 错误延迟结束，准备跳转...');
+                    resolve();
+                }, 2000);
+            });
+
+            console.log('[LoadingUI] 出错后跳转...');
+            this.navigateToMainMenu();
         }
     }
 
@@ -216,6 +268,9 @@ export class LoadingUI extends Component {
      * 跳转到主菜单
      */
     private navigateToMainMenu(): void {
+        console.log('[LoadingUI] navigateToMainMenu 被调用');
+        console.log('[LoadingUI] this.node 有效性:', this.node ? 'valid' : 'null');
+        console.log('[LoadingUI] this.node.isValid:', this.node?.isValid);
         
         // 添加淡出效果
         if (this.node && this.node.isValid) {
@@ -225,10 +280,12 @@ export class LoadingUI extends Component {
                     position: new Vec3(0, 100, 0)
                 }, { easing: 'sineIn' })
                 .call(() => {
+                    console.log('[LoadingUI] 执行 director.loadScene(MainMenu)');
                     director.loadScene('MainMenu');
                 })
                 .start();
         } else {
+            console.log('[LoadingUI] fallback：直接跳转');
             // fallback：直接跳转
             director.loadScene('MainMenu');
         }

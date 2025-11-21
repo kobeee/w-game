@@ -1,5 +1,297 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-11-21 - 🔧 [BUGFIX] BloomFilter 微信小游戏 Base64 解码兼容性修复
+
+### 问题现象
+- **错误信息**：`ReferenceError: Can't find variable: atob`
+- **影响环境**：微信小游戏环境（浏览器环境正常）
+- **根本原因**：`atob` 函数是浏览器 API，在微信小游戏环境中不存在
+
+### 根本原因分析
+**微信小游戏环境限制**：
+1. 微信小游戏运行在特定的 JavaScript 环境，不支持浏览器的 `atob`/`btoa` API
+2. BloomFilter 在加载 `english.bloom.txt` 时使用 `atob` 解码 Base64 数据
+3. 导致布隆过滤器无法初始化，快速否定层失效
+
+### 修复方案
+
+#### 1. 添加微信小游戏兼容的 Base64 解码方法
+```typescript
+private base64Decode(base64String: string): string {
+    // 检查是否在微信小游戏环境
+    if (typeof wx !== 'undefined' && wx.getFileSystemManager) {
+        // 微信小游戏环境，使用 wx.getFileSystemManager().readFileSync 的 base64 解码
+        try {
+            const fs = wx.getFileSystemManager();
+            const tempFilePath = `${wx.env.USER_DATA_PATH}/temp_base64_${Date.now()}.txt`;
+            fs.writeFileSync(tempFilePath, base64String, 'base64');
+            const buffer = fs.readFileSync(tempFilePath);
+            fs.unlinkSync(tempFilePath); // 清理临时文件
+            return String.fromCharCode.apply(null, new Uint8Array(buffer));
+        } catch (e) {
+            console.warn('[BloomFilter] 微信小游戏 Base64 解码失败，回退到手动解码:', e);
+        }
+    }
+    
+    // 回退方案：手动实现 Base64 解码
+    return this.manualBase64Decode(base64String);
+}
+```
+
+#### 2. 实现手动 Base64 解码算法
+- 不依赖任何外部 API，使用标准 Base64 解码算法
+- 64 字符映射表 + 6 位缓冲区处理
+- 兼容所有 JavaScript 环境（浏览器、微信小游戏、Node.js）
+
+#### 3. 修正资源文件配置
+- 修正 `english.bloom.txt.meta` 文件中的 `"files"` 配置从 `.json` 改为 `.txt`
+- 解决 Cocos Creator 资源处理机制的不一致问题
+
+#### 4. 优化资源加载顺序
+```typescript
+const assetNames = [
+    BLOOM_ASSET_TXT,                    // 'english.bloom' (配置中的名称)
+    'english.bloom.txt',                // 带完整 .txt 扩展名
+    'english.bloom'                     // 不带扩展名（Cocos可能的处理结果）
+];
+```
+
+#### 5. 增强调试信息
+- 输出 Bundle 中的实际资源列表
+- 详细检查每个相关资源的配置信息
+- 每个加载尝试都有详细的错误日志
+
+### 修改文件
+- `src/cocos/assets/scripts/services/BloomFilter.ts` - 添加兼容的 Base64 解码方法
+- `src/cocos/assets/bundle/words/english.bloom.txt.meta` - 修正文件类型配置
+
+### 效果
+- **解决微信小游戏环境 Base64 解码问题**
+- 确保布隆过滤器在所有环境中都能正常工作
+- 单词验证的快速否定层在微信小游戏中正常生效
+- 提供详细的调试信息，便于问题追踪
+
+### 验证方法
+1. 在微信开发者工具中运行游戏
+2. 观察控制台是否还有 `atob` 相关错误
+3. 检查 BloomFilter 是否成功初始化并工作
+4. 测试单词验证功能，确认快速否定层正常
+
+---
+
+## 2025-11-21 - 🔧 [BUGFIX] BloomFilter资源路径问题修复（Cocos自动重命名）
+
+## 2025-11-21 - 🔧 [BUGFIX] BloomFilter资源路径问题修复（Cocos自动重命名）
+
+### 问题现象
+- **错误信息**：`Bundle words doesn't contain english.bloom.txt`
+- **奇怪现象**：`english.bloom.txt` 文件在Bundle目录下存在，但Cocos内部可能自动重命名为 `english.bloom`
+- **根本原因**：Cocos Creator 对 `.txt` 文件的处理机制，可能自动去掉扩展名或改变资源路径
+
+### 根本原因分析
+**Cocos Creator 资源处理机制**：
+1. `.meta` 文件显示 `importer: "text"`，但 `files: [".json"]` 存在不一致
+2. Cocos 可能将 `english.bloom.txt` 处理为 `english.bloom`
+3. Bundle 加载时使用原始文件名导致找不到资源
+
+### 修复方案
+
+#### 1. 多路径尝试加载策略
+```typescript
+const assetNames = [
+    BLOOM_ASSET_TXT,                    // 'english.bloom.txt'
+    'english.bloom',                    // 不带 .txt 扩展名
+    'english.bloom.txt'                 // 带完整路径
+];
+```
+
+#### 2. 增强调试信息
+- 添加 Bundle 资源列表输出：`bundle.getDirWithPath('.')`
+- 输出 Bundle 配置信息：`bundle._config.assetInfos`
+- 每次尝试加载都有详细的日志记录
+
+#### 3. 配置文件调整
+- 将 `BLOOM_ASSET_TXT` 从 `'english.bloom.txt'` 改为 `'english.bloom'`
+- 适配 Cocos Creator 的资源命名机制
+
+### 修改文件
+- `src/cocos/assets/scripts/services/BloomFilter.ts` - 多路径尝试加载和调试增强
+- `src/cocos/assets/scripts/config/word-validate.ts` - 调整资源名称配置
+
+### 效果
+- **解决 Cocos 资源路径问题**，无论文件如何被内部处理都能找到
+- **增强调试能力**，可以清楚看到 Bundle 中的实际资源情况
+- **提高兼容性**，支持多种可能的资源命名方式
+
+### 验证方法
+1. 重新运行游戏，观察控制台输出
+2. 检查是否成功找到并加载 BloomFilter 资源
+3. 观察 Bundle 资源列表，确认实际的资源名称
+
+---
+
+## 2025-11-21 - 🔧 [BUGFIX] BloomFilter Base64文本资产加载失败修复
+
+### 问题现象
+- **错误信息**：`BloomFilter.ts:53 [BloomFilter] Base64 文本资产加载失败，布隆过滤器不可用`
+- **影响范围**：单词验证的快速否定层失效，可能导致更多无效网络请求
+
+### 根本原因分析
+**加载时序问题**：
+1. BloomFilter 在 NewWordValidator 初始化时加载
+2. 但此时 PreloadManager 可能还未完成 words bundle 的加载
+3. BloomFilter 尝试加载 `english.bloom.txt` 时，words bundle 不可用导致失败
+
+### 修复方案
+
+#### 1. 添加 bundle 等待机制
+- 新增 `waitForBundle()` 方法，等待 words bundle 加载完成
+- 最多等待10秒，每100ms检查一次bundle是否可用
+- 如果等待超时，尝试手动加载 bundle 作为兜底
+
+#### 2. 增强错误诊断
+- 添加详细的错误日志，包括：
+  - Base64 解码失败信息
+  - txt 对象状态检查
+  - txt.text 类型和长度信息
+- 便于快速定位加载失败的具体原因
+
+#### 3. 优化加载流程
+```typescript
+// 等待words bundle加载完成，最多等待10秒
+const bundle = await this.waitForBundle('words', 10000);
+if (!bundle) {
+    console.error('[BloomFilter] words bundle 加载超时或失败');
+    return false;
+}
+
+console.log('[BloomFilter] words bundle 已就绪，开始加载 Base64 文本资产...');
+```
+
+### 修改文件
+- `src/cocos/assets/scripts/services/BloomFilter.ts` - 添加 bundle 等待机制和错误诊断
+
+### 效果
+- **解决 BloomFilter 加载失败问题**
+- 确保布隆过滤器在 words bundle 准备就绪后才加载
+- 提供详细的错误诊断信息，便于问题追踪
+- 单词验证的快速否定层正常工作，减少无效网络请求
+
+### 验证方法
+1. 清除缓存后重新进入游戏
+2. 观察控制台是否还有 BloomFilter 加载失败错误
+3. 检查布隆过滤器是否正常初始化并工作
+
+---
+
+## 2025-11-21 - 🔧 [BUGFIX] iPhone真机首次加载卡在100%不跳转问题修复（scheduleOnce失效）
+
+### 问题现象
+- **环境**：iPhone 真机 + 微信小游戏
+- **触发条件**：首次进入游戏（完全无缓存）
+- **症状**：
+  - 进度条正常到达 100%
+  - 缩放动画已完成
+  - 底部 Tips 仍在轮播
+  - **但是不跳转到主菜单**，停留时间非常久（远超预期的 1-2 秒）
+
+### 根本原因分析
+**核心问题：`scheduleOnce` 在长时间异步后失效**
+
+1. **异步回调中注册 scheduleOnce 的问题**：
+   - `scheduleOnce` 是在 `async startLoading()` 函数的 **Promise 回调内部** 注册的
+   - `await preloadAllBundles()` 耗时 10-30 秒后，当前组件的调度器可能已经进入 **不稳定状态**
+   - **关键**：在长时间异步操作后，Cocos 的调度系统可能无法正确注册新的一次性回调
+
+2. **微信小游戏环境的特殊性**：
+   - 微信小游戏有 **严格的内存管理** 和 **生命周期控制**
+   - 在资源加载密集期间（10-30 秒），可能触发：
+     - `wx.onMemoryWarning`（内存警告）
+     - 用户切换到后台（`wx.onHide`）
+     - JavaScript 垃圾回收
+   - 这些事件可能影响 Cocos 引擎的调度器状态，导致 **新注册的 `scheduleOnce` 失效**
+
+3. **scheduleOnce vs schedule 的差异**：
+   - `this.schedule()` 在 `onLoad()` → `initializeUI()` → `startTipRotation()` 中注册（**同步执行**）
+   - `this.scheduleOnce()` 在 `start()` → `async startLoading()` → `await ...` 后注册（**异步延迟注册**）
+   - **核心差异**：同步注册的定时器稳定，异步延迟注册的定时器可能失效
+
+### 修复方案
+
+#### 1. 使用 Promise + setTimeout 替代 scheduleOnce
+**核心思路**：
+- 不依赖 Cocos 的定时器系统（`scheduleOnce`），避免调度器状态问题
+- 使用标准的 JavaScript `setTimeout` 包装成 Promise
+- `setTimeout` 是浏览器/JavaScript 引擎原生 API，不受 Cocos 组件生命周期影响
+- **关键**：在长时间异步操作后，JavaScript 原生定时器比 Cocos 调度器更可靠
+
+**修改文件**：`src/cocos/assets/scripts/ui/LoadingUI.ts`
+
+```typescript
+// ✅ 使用 Promise + setTimeout 替代 scheduleOnce
+await new Promise<void>(resolve => {
+    setTimeout(() => {
+        console.log('[LoadingUI] 延迟结束，准备跳转...');
+        resolve();
+    }, 1000);
+});
+
+// ✅ 直接调用跳转，不依赖 scheduleOnce
+console.log('[LoadingUI] 调用 navigateToMainMenu()...');
+this.navigateToMainMenu();
+```
+
+#### 2. 添加 60 秒强制超时跳转兜底方案
+**注意**：兜底方案也使用 `setTimeout`，因为 `scheduleOnce` 可能失效
+
+```typescript
+protected start(): void {
+    // ✅ 强制超时跳转（60秒兜底）- 使用原生 setTimeout
+    setTimeout(() => {
+        if (this.node && this.node.isValid) {
+            console.error('[LoadingUI] ⏰ 加载超时（60秒），强制跳转！');
+            director.loadScene('MainMenu');
+        }
+    }, 60000); // 60秒 = 60000毫秒
+
+    this.startLoading();
+}
+```
+
+#### 3. 修复词库加载期间进度停滞
+- 为 `loadGlossData()` 分配独立进度（0.7 → 0.85）
+- 新增 `loadGlossDataWithProgress()` 方法，提供详细的进度报告
+- 修复词库加载期间进度条"卡住"的问题
+
+#### 4. 增强词库验证，词库为空时阻止游戏启动
+- 词库为空时显示错误信息，不继续跳转
+- 提供用户友好的错误提示："词库加载失败，请检查网络连接后重新进入游戏"
+- 避免游戏在词库缺失的情况下启动
+
+#### 5. 添加详细调试日志和微信生命周期监听
+- 添加 Point A-F 关键节点日志，便于追踪跳转问题
+- 监听微信生命周期事件（内存警告、前后台切换）
+- 增强 `navigateToMainMenu()` 的调试信息
+
+### 修改文件
+- `src/cocos/assets/scripts/ui/LoadingUI.ts` - 修复 scheduleOnce 失效、添加超时兜底、增强调试
+- `src/cocos/assets/scripts/app/PreloadManager.ts` - 修复词库加载进度报告
+
+### 效果
+- **解决 iPhone 真机首次加载卡在 100% 不跳转的问题**
+- 提供更稳定的加载体验，不依赖 Cocos 调度器
+- 词库加载进度显示更平滑，用户体验更好
+- 词库加载失败时提供明确的错误提示
+- 详细的调试日志便于问题追踪和定位
+
+### 验证方法
+1. 在 iPhone 真机上清除缓存后首次进入游戏
+2. 连接 Safari 开发者工具查看控制台日志
+3. 观察是否正常跳转到主菜单
+4. 检查进度条是否平滑显示词库加载进度
+
+---
+
 ## 2025-11-20 - 🧹 [CLEANUP] Bloom 过滤器加载简化（仅保留 Base64 格式）
 
 ### 背景
