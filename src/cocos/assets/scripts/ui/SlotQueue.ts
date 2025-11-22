@@ -22,7 +22,7 @@ export class SlotQueue extends Component {
     public initialCapacity: number = 7;
 
     @property({ type: CCInteger })
-    public maxCapacity: number = 15;
+    public maxCapacity: number = 10;
 
     @property(Node)
     public blinkGroup: Node = null!; // 闪烁时显示的按钮组

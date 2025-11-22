@@ -55,7 +55,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
     private capacity: number = 7;
 
     /** 最大容量限制 */
-    private maxCapacity: number = 15;
+    private maxCapacity: number = 10;
 
     /** 是否处于闪烁状态 */
     private blinking: boolean = false;
@@ -86,7 +86,7 @@ export class SlotQueueManager extends EventTarget implements ISlotQueue {
      * @param initialCapacity 初始容量
      * @param maxCapacity 最大容量
      */
-    init(initialCapacity: number = 7, maxCapacity: number = 15): void {
+    init(initialCapacity: number = 7, maxCapacity: number = 10): void {
         this.letters = [];
         this.capacity = initialCapacity;
         this.maxCapacity = maxCapacity;

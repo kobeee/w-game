@@ -1,5 +1,29 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-11-21 - 🔧 [BALANCE] 叠叠乐牌槽最大容量调整（15格→10格）
+
+### 修改内容
+- **核心逻辑**：牌槽增长上限从 15 格调整为 10 格
+- **UI组件**：同步更新 SlotQueue 组件的最大容量配置
+- **场景配置**：StackGameScene 场景文件中的序列化配置更新
+
+### 修改文件
+- `src/cocos/assets/scripts/core/SlotQueueManager.ts` - 默认 maxCapacity 15→10
+- `src/cocos/assets/scripts/ui/SlotQueue.ts` - @property maxCapacity 15→10  
+- `src/cocos/assets/scenes/StackGameScene.scene` - 场景序列化配置 15→10
+- `docs/how-to-do-it/v0.2.md` - 最大牌槽容量文档更新
+- `docs/design/dev/stack_word_game_design_complete.md` - 设计文档相关引用更新
+
+### 效果
+- 降低游戏后期复杂度，避免牌槽过长导致UI显示问题
+- 性能优化：单词匹配算法复杂度从 O(195) 降低到 O(80)
+- 保持游戏核心玩法不变，仅调整容量上限
+
+### 验证方法
+1. 进入叠叠乐模式，确认初始牌槽为 7 格
+2. 消除单词触发扩容，验证最大只能扩容到 10 格
+3. 检查 UI 显示是否正常，无布局异常
+
 ## 2025-11-21 - 🚀 [PERF] 资源加载优先级优化（分场景加载策略）
 
 ### 背景

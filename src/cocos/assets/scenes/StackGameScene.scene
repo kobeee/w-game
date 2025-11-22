@@ -1103,7 +1103,7 @@
       "__expectedType__": "cc.Prefab"
     },
     "initialCapacity": 7,
-    "maxCapacity": 15,
+    "maxCapacity": 10,
     "blinkGroup": {
       "__id__": 29
     },
