@@ -13,6 +13,12 @@ export class PreloadManager {
 
     private static _instance: PreloadManager = null;
 
+    // 🔥 微信小游戏并发控制
+    private readonly MAX_CONCURRENT_DOWNLOADS = 3; // 最大并发下载数
+    private readonly DOWNLOAD_QUEUE_DELAY = 200;   // 队列延迟（ms）
+    private activeDownloads: number = 0;           // 当前活跃下载数
+    private downloadQueue: Array<() => Promise<void>> = []; // 下载队列
+
     // 需要预加载的Bundle配置（按优先级分组）
     private readonly BUNDLES_TO_PRELOAD = [
         // 🔥 高优先级：启动必需资源（加载场景必须完成）
@@ -93,19 +99,68 @@ export class PreloadManager {
     public async preloadStartupBundles(): Promise<void> {
         this.reportProgress(0, '正在初始化核心资源加载...');
 
+        // 检测微信小游戏网络状态
+        if (typeof wx !== 'undefined') {
+            this.checkWeChatNetworkStatus();
+        }
+
         try {
-            // 🔥 启动阶段：仅加载高优先级必需资源
+            // 🔥 启动阶段：仅加载高优先级必需资源（分配 0 → 0.75 进度）
             const startupBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.phase === 'startup');
-            await this.preloadBundleGroup(startupBundles, 0, 0.6);
+            await this.preloadBundleGroup(startupBundles, 0, 0.75);
 
-            // 📚 核心词库加载（分配独立进度 0.6 → 0.8）
-            await this.loadGlossDataWithProgress(0.6, 0.8, false); // 仅加载核心词库
+            // 📚 核心词库加载（分配独立进度 0.75 → 0.95）
+            await this.loadGlossDataWithProgress(0.75, 0.95, false); // 仅加载核心词库
 
-            this.reportProgress(0.8, '核心资源加载完成，可以进入游戏');
+            this.reportProgress(0.95, '核心资源加载完成，准备进入游戏');
 
         } catch (error) {
             console.error('[PreloadManager] 启动资源加载失败:', error);
-            this.reportProgress(0.75, '核心资源加载完成（部分使用缓存）');
+            this.reportProgress(0.9, '核心资源加载完成（部分使用缓存）');
+        }
+    }
+
+    /**
+     * 检查微信小游戏网络状态
+     */
+    private checkWeChatNetworkStatus(): void {
+        try {
+            const systemInfo = wx.getSystemInfoSync();
+            console.log('[PreloadManager] 微信环境信息:', {
+                platform: systemInfo.platform,
+                version: systemInfo.version,
+                SDKVersion: systemInfo.SDKVersion,
+                benchmarkLevel: systemInfo.benchmarkLevel
+            });
+
+            // 检查网络类型
+            wx.getNetworkType({
+                success: (res) => {
+                    console.log('[PreloadManager] 网络类型:', res.networkType);
+                    if (res.networkType === 'none') {
+                        console.warn('[PreloadManager] ⚠️ 无网络连接，将使用缓存资源');
+                        this.reportProgress(0.05, '检测到无网络，将使用缓存资源');
+                    } else if (res.networkType === '2g' || res.networkType === '3g') {
+                        console.warn('[PreloadManager] ⚠️ 网络较慢，可能需要更长时间');
+                        this.reportProgress(0.05, `网络较慢(${res.networkType})，请耐心等待`);
+                    }
+                },
+                fail: () => {
+                    console.warn('[PreloadManager] 无法获取网络类型');
+                }
+            });
+
+            // 监听网络状态变化
+            wx.onNetworkStatusChange((res) => {
+                if (!res.isConnected) {
+                    console.warn('[PreloadManager] 网络断开');
+                } else {
+                    console.log('[PreloadManager] 网络已连接，类型:', res.networkType);
+                }
+            });
+
+        } catch (error) {
+            console.warn('[PreloadManager] 微信网络状态检测失败:', error);
         }
     }
 
@@ -247,6 +302,15 @@ export class PreloadManager {
     }
 
     /**
+     * 🎯 兼容性方法：预加载单个Bundle（用于LoadingUI）
+     * 保持与现有preloadSingleBundle方法的兼容性，但支持微信小游戏并发控制
+     */
+    public async preloadSingleBundleCompat(bundleName: string, startProgress: number, endProgress: number): Promise<void> {
+        // 直接调用现有的preloadSingleBundle方法，已包含并发控制和429重试
+        await this.preloadSingleBundle(bundleName, startProgress, endProgress);
+    }
+
+    /**
      * 加载词库数据（确保WordMatcher初始化前完成）
      * @param useExtended 是否加载扩展词库（默认false，启动阶段仅加载核心）
      */
@@ -331,7 +395,7 @@ export class PreloadManager {
     }
     
     /**
-     * 预加载一组Bundle
+     * 预加载一组Bundle（支持并发控制）
      */
     private async preloadBundleGroup(bundles: {name: string, priority: number}[], startProgress: number, endProgress: number): Promise<void> {
         const totalBundles = bundles.length;
@@ -339,60 +403,116 @@ export class PreloadManager {
         
         const progressPerBundle = (endProgress - startProgress) / totalBundles;
         
-        for (let i = 0; i < totalBundles; i++) {
-            const bundle = bundles[i];
-            const bundleStartProgress = startProgress + i * progressPerBundle;
-            const bundleEndProgress = bundleStartProgress + progressPerBundle;
+        // 🎯 微信小游戏环境下使用串行加载，避免429错误
+        if (typeof wx !== 'undefined') {
+            console.log('[PreloadManager] 📱 微信小游戏环境：使用串行Bundle加载');
+            for (let i = 0; i < totalBundles; i++) {
+                const bundle = bundles[i];
+                const bundleStartProgress = startProgress + i * progressPerBundle;
+                const bundleEndProgress = bundleStartProgress + progressPerBundle;
+                
+                await this.preloadSingleBundle(bundle.name, bundleStartProgress, bundleEndProgress);
+                
+                // Bundle间添加延迟，进一步避免429
+                if (i < totalBundles - 1) {
+                    await new Promise(resolve => setTimeout(resolve, this.DOWNLOAD_QUEUE_DELAY));
+                }
+            }
+        } else {
+            // 🌐 浏览器环境：使用并发加载
+            console.log('[PreloadManager] 🌐 浏览器环境：使用并发Bundle加载');
+            const bundlePromises = bundles.map((bundle, i) => {
+                const bundleStartProgress = startProgress + i * progressPerBundle;
+                const bundleEndProgress = bundleStartProgress + progressPerBundle;
+                return this.preloadSingleBundle(bundle.name, bundleStartProgress, bundleEndProgress);
+            });
             
-            await this.preloadSingleBundle(bundle.name, bundleStartProgress, bundleEndProgress);
+            await Promise.all(bundlePromises);
         }
     }
     
     /**
-     * 预加载单个Bundle及其关键资源
+     * 预加载单个Bundle及其关键资源（支持429重试）
      */
     private async preloadSingleBundle(bundleName: string, startProgress: number, endProgress: number): Promise<void> {
-        return new Promise<void>((resolve, reject) => {
-            this.reportProgress(startProgress, `正在加载 ${bundleName} 资源包...`);
-
-            // 首先加载Bundle
-            assetManager.loadBundle(bundleName, (err, bundle) => {
-                if (err) {
-                    console.error(`[PreloadManager.preloadSingleBundle] ❌ Bundle '${bundleName}' 加载失败:`, err);
-                    this.reportProgress(endProgress, `${bundleName} 资源包加载失败，将使用缓存`);
-                    resolve(); // 继续加载其他Bundle
+        const maxRetries = 3;
+        const retryDelay = 1000; // 1秒重试间隔
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                await this.attemptBundleLoad(bundleName, startProgress, endProgress, attempt, maxRetries);
+                return; // 成功则返回
+            } catch (error) {
+                console.warn(`[PreloadManager] Bundle '${bundleName}' 第 ${attempt} 次尝试失败:`, error);
+                
+                if (attempt === maxRetries) {
+                    // 最后一次尝试失败，但继续流程（降级处理）
+                    console.error(`[PreloadManager] ❌ Bundle '${bundleName}' 所有尝试失败，启用降级模式`);
+                    this.reportProgress(endProgress, `${bundleName} 资源包加载失败，将使用本地资源`);
                     return;
                 }
-
                 
-                this.loadedBundles.set(bundleName, bundle);
+                // 等待后重试
+                await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
+            }
+        }
+    }
 
-                // 验证Bundle是否在官方缓存中
-                const cachedBundle = assetManager.getBundle(bundleName);
-                if (!cachedBundle) {
-                    console.error(`[PreloadManager.preloadSingleBundle] ⚠️ Bundle '${bundleName}' 加载成功但未在缓存中！`);
-                }
+    /**
+     * 尝试加载Bundle（单次尝试）
+     */
+    private async attemptBundleLoad(bundleName: string, startProgress: number, endProgress: number, attempt: number, maxAttempts: number): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const attemptMsg = attempt > 1 ? ` (第${attempt}次尝试)` : '';
+            this.reportProgress(startProgress, `正在加载 ${bundleName} 资源包${attemptMsg}...`);
 
-                // Bundle加载占50%进度
-                const midProgress = startProgress + (endProgress - startProgress) * 0.5;
-                this.reportProgress(midProgress, `正在预加载 ${bundleName} 内部资源...`);
+            // 检测429错误并延迟重试
+            const originalLoadBundle = assetManager.loadBundle;
+            const enhancedLoadBundle = (name: string, callback: Function) => {
+                originalLoadBundle.call(assetManager, name, (err: any, bundle: any) => {
+                    if (err && err.message && err.message.includes('429')) {
+                        console.warn(`[PreloadManager] 检测到429错误，Bundle '${name}' 将重试`);
+                        reject(new Error(`429 Rate Limit: ${name}`));
+                        return;
+                    }
+                    
+                    if (err) {
+                        console.error(`[PreloadManager.preloadSingleBundle] ❌ Bundle '${bundleName}' 加载失败:`, err);
+                        reject(err);
+                        return;
+                    }
 
-                // 预加载Bundle内的关键资源
-                this.preloadBundleAssets(bundle, bundleName, midProgress, endProgress)
-                    .then(() => {
-                        
-                        resolve();
-                    })
-                    .catch((error) => {
-                        console.error(`[PreloadManager.preloadSingleBundle] ⚠️ Bundle '${bundleName}' 资源预加载失败，但继续:`, error);
-                        resolve();
-                    });
+                    this.loadedBundles.set(bundleName, bundle);
+
+                    // 验证Bundle是否在官方缓存中
+                    const cachedBundle = assetManager.getBundle(bundleName);
+                    if (!cachedBundle) {
+                        console.error(`[PreloadManager.preloadSingleBundle] ⚠️ Bundle '${bundleName}' 加载成功但未在缓存中！`);
+                    }
+
+                    // Bundle加载占50%进度
+                    const midProgress = startProgress + (endProgress - startProgress) * 0.5;
+                    this.reportProgress(midProgress, `正在预加载 ${bundleName} 内部资源...`);
+
+                    // 预加载Bundle内的关键资源
+                    this.preloadBundleAssets(bundle, bundleName, midProgress, endProgress)
+                        .then(() => resolve())
+                        .catch((error) => {
+                            console.error(`[PreloadManager.preloadSingleBundle] ⚠️ Bundle '${bundleName}' 资源预加载失败，但继续:`, error);
+                            resolve(); // 资源预加载失败不阻断Bundle加载
+                        });
+                });
+            };
+
+            enhancedLoadBundle(bundleName, (err: any, bundle: any) => {
+                // 回调已在 enhancedLoadBundle 中处理
             });
         });
     }
     
     /**
      * 完全加载Bundle内的关键资源（包括反序列化和初始化）
+     * 🎯 支持微信小游戏并发控制
      */
     private async preloadBundleAssets(bundle: assetManager.Bundle, bundleName: string, startProgress: number, endProgress: number): Promise<void> {
         const assetsToLoad = this.ASSETS_TO_PRELOAD[bundleName] || [];
@@ -403,18 +523,80 @@ export class PreloadManager {
         
         const progressPerAsset = (endProgress - startProgress) / assetsToLoad.length;
         
-        for (let i = 0; i < assetsToLoad.length; i++) {
-            const assetPath = assetsToLoad[i];
-            const assetProgress = startProgress + i * progressPerAsset;
+        // 🎯 微信小游戏环境下使用队列控制并发
+        if (typeof wx !== 'undefined') {
+            console.log(`[PreloadManager] 📱 微信小游戏环境：${bundleName} 资源使用队列加载`);
             
-            try {
-                await this.preloadSingleAsset(bundle, assetPath, bundleName);
-                this.reportProgress(assetProgress + progressPerAsset, `${bundleName}/${assetPath} 完全加载完成`);
-            } catch (error) {
-                console.warn(`[PreloadManager] 完全加载资源 ${bundleName}/${assetPath} 失败:`, error);
-                // 继续加载下一个资源
+            for (let i = 0; i < assetsToLoad.length; i++) {
+                const assetPath = assetsToLoad[i];
+                const assetProgress = startProgress + i * progressPerAsset;
+                
+                // 🔥 并发控制：等待当前下载完成
+                await this.executeWithConcurrencyControl(async () => {
+                    try {
+                        await this.preloadSingleAsset(bundle, assetPath, bundleName);
+                        this.reportProgress(assetProgress + progressPerAsset, `${bundleName}/${assetPath} 完全加载完成`);
+                    } catch (error) {
+                        console.warn(`[PreloadManager] 完全加载资源 ${bundleName}/${assetPath} 失败:`, error);
+                        // 继续加载下一个资源
+                    }
+                });
+                
+                // 资源间添加小延迟，避免触发429
+                if (i < assetsToLoad.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 50)); // 50ms延迟
+                }
             }
+        } else {
+            // 🌐 浏览器环境：使用并发加载
+            console.log(`[PreloadManager] 🌐 浏览器环境：${bundleName} 资源使用并发加载`);
+            const assetPromises = assetsToLoad.map(async (assetPath, i) => {
+                const assetProgress = startProgress + i * progressPerAsset;
+                try {
+                    await this.preloadSingleAsset(bundle, assetPath, bundleName);
+                    this.reportProgress(assetProgress + progressPerAsset, `${bundleName}/${assetPath} 完全加载完成`);
+                } catch (error) {
+                    console.warn(`[PreloadManager] 完全加载资源 ${bundleName}/${assetPath} 失败:`, error);
+                }
+            });
+            
+            await Promise.all(assetPromises);
         }
+    }
+
+    /**
+     * 🔥 并发控制执行器
+     */
+    private async executeWithConcurrencyControl(task: () => Promise<void>): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const executeTask = async () => {
+                // 等待直到有可用的下载槽位
+                while (this.activeDownloads >= this.MAX_CONCURRENT_DOWNLOADS) {
+                    await new Promise(wait => setTimeout(wait, 100));
+                }
+                
+                this.activeDownloads++;
+                
+                try {
+                    await task();
+                    resolve();
+                } catch (error) {
+                    reject(error);
+                } finally {
+                    this.activeDownloads--;
+                    
+                    // 处理队列中的下一个任务
+                    if (this.downloadQueue.length > 0) {
+                        const nextTask = this.downloadQueue.shift();
+                        if (nextTask) {
+                            nextTask().catch(console.error);
+                        }
+                    }
+                }
+            };
+            
+            executeTask();
+        });
     }
     
     /**

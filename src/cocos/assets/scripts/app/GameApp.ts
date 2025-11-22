@@ -40,6 +40,9 @@ export class GameApp extends Component {
     private roundsCompleted: number = 0;
 
     protected async onLoad(): Promise<void> {
+        // 🔍 监控微信小游戏内存状态
+        this.setupMemoryMonitoring();
+        
         await this.loadRemoteAssets(); // 动态加载远程资源
         await this.initializeGame();
         this.setupEventListeners();
@@ -49,6 +52,28 @@ export class GameApp extends Component {
         
         // 开始游戏
         this.startGame();
+    }
+
+    /**
+     * 🔍 设置微信小游戏内存监控
+     */
+    private setupMemoryMonitoring(): void {
+        if (typeof wx !== 'undefined') {
+            wx.onMemoryWarning((res) => {
+                console.warn('[GameApp] ⚠️ 收到内存警告:', res);
+                this.handleMemoryWarning();
+            });
+        }
+    }
+
+    /**
+     * 处理内存警告
+     */
+    private handleMemoryWarning(): void {
+        console.log('[GameApp] 🧹 处理内存警告');
+        if (typeof gc !== 'undefined') {
+            gc();
+        }
     }
 
     /**

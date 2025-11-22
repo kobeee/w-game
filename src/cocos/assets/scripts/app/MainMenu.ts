@@ -41,6 +41,9 @@ export class MainMenu extends Component {
     private isSyncingGameMode = false;
 
     protected async onLoad(): Promise<void> {
+        // 🔍 监控微信小游戏内存状态
+        this.setupMemoryMonitoring();
+        
         this.setupButtons();
         this.loadSettings();
         
@@ -59,6 +62,52 @@ export class MainMenu extends Component {
         // 🚀 启动主菜单后台资源加载
         this.startBackgroundResourceLoading();
         
+    }
+
+    /**
+     * 🔍 设置微信小游戏内存监控
+     */
+    private setupMemoryMonitoring(): void {
+        if (typeof wx !== 'undefined') {
+            // 监听内存警告
+            wx.onMemoryWarning((res) => {
+                console.warn('[MainMenu] ⚠️ 收到内存警告:', res);
+                console.warn('[MainMenu] 当前可用内存较少，可能影响资源加载');
+                
+                // 可以在这里清理缓存或降低资源质量
+                this.handleMemoryWarning();
+            });
+
+            // 监听性能状态
+            wx.onPerformanceEntry((entries) => {
+                for (const entry of entries) {
+                    if (entry.entryType === 'memory' && entry.usedJSHeapSize) {
+                        const usedMB = Math.round(entry.usedJSHeapSize / 1024 / 1024);
+                        if (usedMB > 150) { // 超过150MB认为内存紧张
+                            console.warn(`[MainMenu] ⚠️ 内存使用较高: ${usedMB}MB`);
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * 处理内存警告
+     */
+    private handleMemoryWarning(): void {
+        console.log('[MainMenu] 🧹 处理内存警告，清理非必要资源');
+        
+        // 可以在这里：
+        // 1. 清理不用的纹理缓存
+        // 2. 降低资源质量
+        // 3. 释放音频资源
+        // 4. 停止后台动画
+        
+        // 简单的内存清理：强制垃圾回收（如果支持）
+        if (typeof gc !== 'undefined') {
+            gc();
+        }
     }
 
     protected onEnable(): void {
@@ -379,13 +428,25 @@ export class MainMenu extends Component {
             // 显示缓存统计信息
             const cacheStats = assetLoader.getCacheStats();
             
-            // 并行加载背景和标题资源
-            await Promise.all([
-                // 加载背景资源 - 自动利用预加载缓存
-                this.loadSpriteFromBundle('bg', 'main_scene_bg/spriteFrame', this.backgroundSprite),
-                // 加载标题资源 - 自动利用预加载缓存
-                this.loadSpriteFromBundle('title', 'title/spriteFrame', this.titleSprite)
-            ]);
+            // 🎯 微信小游戏环境下串行加载，避免并发限制
+            if (typeof wx !== 'undefined') {
+                console.log('[MainMenu] 📱 微信小游戏环境：使用串行加载避免429');
+                
+                // 串行加载，避免并发限制
+                await this.loadSpriteFromBundle('bg', 'main_scene_bg/spriteFrame', this.backgroundSprite);
+                // 添加延迟，避免触发429
+                await new Promise(resolve => setTimeout(resolve, 100));
+                await this.loadSpriteFromBundle('title', 'title/spriteFrame', this.titleSprite);
+            } else {
+                // 浏览器环境：并行加载
+                console.log('[MainMenu] 🌐 浏览器环境：使用并行加载');
+                await Promise.all([
+                    // 加载背景资源 - 自动利用预加载缓存
+                    this.loadSpriteFromBundle('bg', 'main_scene_bg/spriteFrame', this.backgroundSprite),
+                    // 加载标题资源 - 自动利用预加载缓存
+                    this.loadSpriteFromBundle('title', 'title/spriteFrame', this.titleSprite)
+                ]);
+            }
             
         } catch (error) {
             console.error('[MainMenu] 远程资源加载失败:', error);

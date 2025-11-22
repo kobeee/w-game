@@ -37,6 +37,10 @@ export class LoadingUI extends Component {
     
     private currentTipIndex: number = 0;
     private preloadManager: PreloadManager = null!;
+    private timeoutTimer: any = null;
+    private hasNavigated: boolean = false;
+    private startTime: number = 0;
+    private checkInterval: any = null;
     
     protected onLoad(): void {
         // 监听微信生命周期
@@ -59,13 +63,8 @@ export class LoadingUI extends Component {
     }
     
     protected start(): void {
-        // ✅ 强制超时跳转（60秒兜底）- 使用原生 setTimeout
-        setTimeout(() => {
-            if (this.node && this.node.isValid) {
-                console.error('[LoadingUI] ⏰ 加载超时（60秒），强制跳转！');
-                director.loadScene('MainMenu');
-            }
-        }, 60000); // 60秒 = 60000毫秒
+        // ✅ 强制超时跳转（30秒兜底）- 使用微信小游戏兼容的超时机制
+        this.setupWeChatTimeoutFallback(30000); // 30秒
 
         this.startLoading();
     }
@@ -97,9 +96,67 @@ export class LoadingUI extends Component {
     }
     
     /**
+     * 设置微信小游戏兼容的超时机制
+     */
+    private setupWeChatTimeoutFallback(timeoutMs: number): void {
+        console.log(`[LoadingUI] 设置超时机制：${timeoutMs}ms`);
+        
+        // 微信小游戏环境下的多重超时保障
+        const forceNavigate = () => {
+            if (this.hasNavigated) {
+                console.log('[LoadingUI] 已跳转，忽略超时');
+                return;
+            }
+            
+            console.error(`[LoadingUI] ⏰ 加载超时（${timeoutMs/1000}秒），强制跳转！`);
+            this.hasNavigated = true;
+            
+            // 更新状态提示
+            if (this.statusLabel) {
+                this.statusLabel.string = `加载超时，正在跳转...`;
+            }
+            
+            // 强制跳转
+            try {
+                director.loadScene('MainMenu');
+            } catch (error) {
+                console.error('[LoadingUI] 强制跳转失败:', error);
+                // 备用方案：重新加载当前场景
+                director.loadScene(director.getScene().name);
+            }
+        };
+
+        // 方案1：原生 setTimeout（主要方案）
+        this.timeoutTimer = setTimeout(forceNavigate, timeoutMs);
+        
+        // 方案2：微信小游戏环境下的额外保障
+        if (typeof wx !== 'undefined') {
+            // 微信小游戏可能限制 setTimeout，添加备用检查
+            const checkInterval = setInterval(() => {
+                if (this.hasNavigated) {
+                    clearInterval(checkInterval);
+                    return;
+                }
+                
+                // 检查是否超时
+                const now = Date.now();
+                if (now - this.startTime > timeoutMs + 5000) { // 额外5秒缓冲
+                    console.warn('[LoadingUI] 微信小游戏超时检查触发');
+                    clearInterval(checkInterval);
+                    forceNavigate();
+                }
+            }, 2000); // 每2秒检查一次
+            
+            // 存储检查定时器以便清理
+            this.checkInterval = checkInterval;
+        }
+    }
+
+    /**
      * 开始加载流程
      */
     private async startLoading(): Promise<void> {
+        this.startTime = Date.now(); // 记录开始时间
         console.log('[LoadingUI] Point A: 开始加载流程...');
 
         // 设置进度回调
@@ -111,8 +168,11 @@ export class LoadingUI extends Component {
             await this.preloadManager.preloadStartupBundles();
             console.log('[LoadingUI] Point C: preloadStartupBundles 完成');
 
-            // 🚀 PreloadManager已在preloadStartupBundles()中加载核心词库
-            this.updateStatus(0.85, '核心资源加载完成');
+            // 🚀 PreloadManager已在preloadStartupBundles()中加载核心词库到 95%
+            this.updateStatus(0.96, '核心资源加载完成，正在预加载主菜单资源...');
+
+            // 🎯 预加载主菜单必需的Bundle，避免场景切换时429错误
+            await this.preloadMainMenuBundles();
 
             // 验证词库是否加载成功
             const glossService = GlossService.getInstance();
@@ -143,8 +203,9 @@ export class LoadingUI extends Component {
                 console.log('[LoadingUI] ✅ 词库验证成功，词库包含', allWords.length, '个单词');
             }
 
-            console.log('[LoadingUI] Point D: 更新进度到 100%');
-            this.updateStatus(1.0, '所有资源加载完成！');
+            // 🎯 平滑过渡到 100%，让用户看到完整进度
+            console.log('[LoadingUI] Point D: 开始平滑过渡到 100%');
+            await this.smoothProgressToFull(0.96, 1.0, 800); // 从 96% 到 100%，耗时 800ms
 
             console.log('[LoadingUI] Point E: 延迟开始（1秒）');
             // ✅ 使用 Promise + setTimeout 替代 scheduleOnce
@@ -175,9 +236,73 @@ export class LoadingUI extends Component {
     }
 
     /**
+     * 平滑过渡到完整进度
+     */
+    private async smoothProgressToFull(startProgress: number, endProgress: number, duration: number): Promise<void> {
+        return new Promise<void>((resolve) => {
+            const steps = 20; // 分20步完成过渡
+            const stepDuration = duration / steps;
+            const progressIncrement = (endProgress - startProgress) / steps;
+            let currentStep = 0;
+
+            const updateStep = () => {
+                currentStep++;
+                const currentProgress = Math.min(startProgress + (progressIncrement * currentStep), endProgress);
+                
+                this.updateStatus(currentProgress, `正在完成最终准备... ${Math.round(currentProgress * 100)}%`);
+
+                if (currentStep < steps) {
+                    setTimeout(updateStep, stepDuration);
+                } else {
+                    // 最终完成
+                    this.updateStatus(endProgress, '所有资源加载完成！');
+                    resolve();
+                }
+            };
+
+            updateStep();
+        });
+    }
+
+    /**
+     * 🎯 预加载主菜单必需的Bundle，避免场景切换时429错误
+     */
+    private async preloadMainMenuBundles(): Promise<void> {
+        console.log('[LoadingUI] 🎯 开始预加载主菜单Bundle...');
+        
+        try {
+            // 主菜单需要的Bundle：bg（背景）、title（标题）
+            const requiredBundles = ['bg', 'title'];
+            
+            for (const bundleName of requiredBundles) {
+                // 检查Bundle是否已经预加载
+                if (this.preloadManager.isBundleLoaded(bundleName)) {
+                    console.log(`[LoadingUI] ✅ Bundle ${bundleName} 已预加载，跳过`);
+                    continue;
+                }
+                
+                console.log(`[LoadingUI] 🔄 预加载主菜单Bundle: ${bundleName}`);
+                
+                // 使用PreloadManager的串行加载机制，避免429
+                await this.preloadManager.preloadSingleBundleCompat(bundleName, 0.96, 0.98);
+                
+                // 添加延迟，避免触发429
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+            
+            console.log('[LoadingUI] ✅ 主菜单Bundle预加载完成');
+            
+        } catch (error) {
+            console.warn('[LoadingUI] ⚠️ 主菜单Bundle预加载失败，但不影响场景切换:', error);
+            // 失败不影响场景切换，MainMenu会在onLoad时动态加载
+        }
+    }
+
+    /**
      * 更新加载状态
      */
     private updateStatus(progress: number, message: string): void {
+        // 直接设置进度条和百分比，确保同步
         if (this.progressBar) {
             this.progressBar.progress = progress;
         }
@@ -194,17 +319,23 @@ export class LoadingUI extends Component {
      */
     private onLoadingProgress(progress: number, message: string): void {
         
-        // 更新进度条
+        // 更新进度条和百分比文本，确保同步
         if (this.progressBar && this.progressBar.node && this.progressBar.node.isValid) {
             // 使用动画过渡，让进度变化更平滑
             tween(this.progressBar)
                 .to(0.3, { progress: progress })
+                .call(() => {
+                    // 在动画完成时同步更新百分比，确保进度条和百分比一致
+                    if (this.progressLabel) {
+                        this.progressLabel.string = `${Math.round(progress * 100)}%`;
+                    }
+                })
                 .start();
-        }
-        
-        // 更新进度文本
-        if (this.progressLabel) {
-            this.progressLabel.string = `${Math.round(progress * 100)}%`;
+        } else {
+            // 如果进度条不可用，直接更新百分比
+            if (this.progressLabel) {
+                this.progressLabel.string = `${Math.round(progress * 100)}%`;
+            }
         }
         
         // 更新状态文本
@@ -268,9 +399,20 @@ export class LoadingUI extends Component {
      * 跳转到主菜单
      */
     private navigateToMainMenu(): void {
+        if (this.hasNavigated) {
+            console.log('[LoadingUI] 已跳转，重复调用忽略');
+            return;
+        }
+        
         console.log('[LoadingUI] navigateToMainMenu 被调用');
         console.log('[LoadingUI] this.node 有效性:', this.node ? 'valid' : 'null');
         console.log('[LoadingUI] this.node.isValid:', this.node?.isValid);
+        
+        // 标记已跳转
+        this.hasNavigated = true;
+        
+        // 清理超时定时器
+        this.cleanupTimeouts();
         
         // 添加淡出效果
         if (this.node && this.node.isValid) {
@@ -290,6 +432,21 @@ export class LoadingUI extends Component {
             director.loadScene('MainMenu');
         }
     }
+
+    /**
+     * 清理超时定时器
+     */
+    private cleanupTimeouts(): void {
+        if (this.timeoutTimer) {
+            clearTimeout(this.timeoutTimer);
+            this.timeoutTimer = null;
+        }
+        
+        if (this.checkInterval) {
+            clearInterval(this.checkInterval);
+            this.checkInterval = null;
+        }
+    }
     
     /**
      * 组件销毁时清理
@@ -297,6 +454,9 @@ export class LoadingUI extends Component {
     protected onDestroy(): void {
         // 清理定时器
         this.unscheduleAllCallbacks();
+        
+        // 清理超时定时器
+        this.cleanupTimeouts();
         
         // 停止所有Tween动画 - 使用新的Tween系统方法
         if (this.logoSprite && this.logoSprite.node && this.logoSprite.node.isValid) {
