@@ -41,6 +41,7 @@ export class LoadingUI extends Component {
     private hasNavigated: boolean = false;
     private startTime: number = 0;
     private checkInterval: any = null;
+    private _lastProgress: number = 0; // Fix 4: 防止进度条倒车
     
     protected onLoad(): void {
         // 监听微信生命周期
@@ -299,9 +300,19 @@ export class LoadingUI extends Component {
     }
 
     /**
-     * 更新加载状态
+     * 更新加载状态 (Fix 4 & 5: 防止倒车 + 屏蔽文件名)
      */
     private updateStatus(progress: number, message: string): void {
+        // Fix 4: 防止进度条倒车
+        if (progress < this._lastProgress) {
+            progress = this._lastProgress;
+        } else {
+            this._lastProgress = progress;
+        }
+
+        // Fix 5: 强制隐藏文件名，只显示统一文案
+        const cleanMessage = "资源加载中..."; 
+
         // 直接设置进度条和百分比，确保同步
         if (this.progressBar) {
             this.progressBar.progress = progress;
@@ -310,14 +321,23 @@ export class LoadingUI extends Component {
             this.progressLabel.string = `${Math.round(progress * 100)}%`;
         }
         if (this.statusLabel) {
-            this.statusLabel.string = message;
+            this.statusLabel.string = cleanMessage;
         }
     }
     
     /**
-     * 加载进度回调
+     * 加载进度回调 (Fix 4 & 5: 防止倒车 + 屏蔽文件名)
      */
     private onLoadingProgress(progress: number, message: string): void {
+        // Fix 4: 防止进度条倒车
+        if (progress < this._lastProgress) {
+            progress = this._lastProgress;
+        } else {
+            this._lastProgress = progress;
+        }
+
+        // Fix 5: 强制隐藏文件名，只显示统一文案
+        const cleanMessage = "资源加载中..."; 
         
         // 更新进度条和百分比文本，确保同步
         if (this.progressBar && this.progressBar.node && this.progressBar.node.isValid) {
@@ -340,7 +360,7 @@ export class LoadingUI extends Component {
         
         // 更新状态文本
         if (this.statusLabel) {
-            this.statusLabel.string = message;
+            this.statusLabel.string = cleanMessage;
         }
         
         // 进度达到100%时更新提示
