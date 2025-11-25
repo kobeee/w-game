@@ -3,6 +3,8 @@ import { AssetLoader } from '../core/AssetLoader';
 import { TimezoneSync } from '../services/TimezoneSync';
 import { GameMode, GAME_MODE_CONFIGS, DEFAULT_GAME_MODE, GAME_MODE_STORAGE_KEY } from '../data/GameMode';
 import { PreloadManager } from './PreloadManager';
+// 尽早导入 AbortController polyfill，确保微信小游戏兼容性
+import '../util/AbortControllerPolyfill';
 // 使用统一AssetLoader，完全利用Cocos Creator 3.8.7缓存机制
 
 const { ccclass, property } = _decorator;
@@ -78,17 +80,21 @@ export class MainMenu extends Component {
                 this.handleMemoryWarning();
             });
 
-            // 监听性能状态
-            wx.onPerformanceEntry((entries) => {
-                for (const entry of entries) {
-                    if (entry.entryType === 'memory' && entry.usedJSHeapSize) {
-                        const usedMB = Math.round(entry.usedJSHeapSize / 1024 / 1024);
-                        if (usedMB > 150) { // 超过150MB认为内存紧张
-                            console.warn(`[MainMenu] ⚠️ 内存使用较高: ${usedMB}MB`);
+            // 监听性能状态（兼容性检查）
+            if (wx.onPerformanceEntry && typeof wx.onPerformanceEntry === 'function') {
+                wx.onPerformanceEntry((entries) => {
+                    for (const entry of entries) {
+                        if (entry.entryType === 'memory' && entry.usedJSHeapSize) {
+                            const usedMB = Math.round(entry.usedJSHeapSize / 1024 / 1024);
+                            if (usedMB > 150) { // 超过150MB认为内存紧张
+                                console.warn(`[MainMenu] ⚠️ 内存使用较高: ${usedMB}MB`);
+                            }
                         }
                     }
-                }
-            });
+                });
+            } else {
+                console.warn('[MainMenu] wx.onPerformanceEntry API不可用，跳过性能监听');
+            }
         }
     }
 

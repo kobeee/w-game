@@ -1,5 +1,143 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-11-25 - 🔧 [CRITICAL] 微信小游戏兼容性修复（Base64栈溢出+AbortController polyfill）
+
+### 🚨 关键问题解决
+彻底解决微信开发者工具模拟器中的两个致命错误：
+1. **Base64解码栈溢出**：`RangeError: Maximum call stack size exceeded`
+2. **AbortController未定义**：`ReferenceError: AbortController is not defined`
+
+### 🎯 根本原因分析
+- **Base64问题**：`String.fromCharCode.apply(null, largeArray)` 在处理BloomFilter大数据时导致栈溢出
+- **AbortController问题**：微信小游戏运行时环境不支持AbortController API，影响网络请求取消功能
+
+### 🛠️ 解决方案实施
+1. **Base64解码优化**：
+   - 分块处理大数据（8KB chunks），避免栈溢出
+   - 优先使用微信小游戏原生API：`wx.base64ToArrayBuffer`
+   - 多重回退机制：原生API → 文件系统 → 手动解码
+
+2. **AbortController Polyfill**：
+   - 新建 `AbortControllerPolyfill.ts` 实现轻量级兼容层
+   - 在所有主要入口文件尽早导入，确保全局可用
+   - 支持基本abort功能和事件监听机制
+
+3. **兼容性检查**：
+   - 在PreloadManager中添加运行时诊断
+   - 检测关键API可用性并提供详细日志
+
+### 📁 修改文件清单
+**新建文件**：
+- `src/cocos/assets/scripts/util/AbortControllerPolyfill.ts`
+- `src/cocos/assets/scripts/util/CompatibilityTest.ts`
+- `docs/fix/017-微信小游戏兼容性修复.md`
+
+**修改文件**：
+- `src/cocos/assets/scripts/services/BloomFilter.ts` - Base64解码优化
+- `src/cocos/assets/scripts/services/WordValidationManager.ts` - 导入polyfill
+- `src/cocos/assets/scripts/services/NetworkService.ts` - 导入polyfill
+- `src/cocos/assets/scripts/ui/LoadingUI.ts` - 导入polyfill
+- `src/cocos/assets/scripts/app/MainMenu.ts` - 导入polyfill
+- `src/cocos/assets/scripts/app/GameApp.ts` - 导入polyfill
+- `src/cocos/assets/scripts/app/StackGameApp.ts` - 导入polyfill
+- `src/cocos/assets/scripts/app/PreloadManager.ts` - 兼容性检查
+
+## 2025-11-25 - 🚨 [CRITICAL] 016熔断与流量整形方案实施（彻底根治429）
+
+### 🎯 方案核心思想
+从第一性原理出发，采用微服务架构的熔断器模式(Circuit Breaker)和流量整形(Traffic Shaping)，彻底解决429顽疾。
+
+### 🔥 关键问题重新认识
+1. **死循环攻击**：传统重试机制在429后立即重试，反而延长服务器封禁时间
+2. **QPS超标**：仅限制并发数不够，瞬时高频请求仍会触发WAF防火墙
+3. **虚假完成**：资源加载失败后强制跳转，导致运行时崩溃
+
+### 🛡️ 熔断与流量整形策略
+
+#### 1. 全局熔断(Global Pause)
+- **触发条件**：检测到任意429错误
+- **熔断行为**：暂停调度器2000ms，所有排队请求冻结
+- **熔断恢复**：2000ms后自动恢复调度
+
+#### 2. 流量整形(Rate Limiting)  
+- **强制间隔**：两次请求物理间隔至少100ms
+- **并发控制**：最大并发数降至3（安全值）
+- **QPS限制**：物理锁定最大QPS约10，远低于WAF阈值
+
+#### 3. 严格错误处理(Strict Error Handling)
+- **真实反馈**：资源加载失败就是失败，不再假装成功
+- **用户交互**：失败后弹出重试对话框，而非强制跳转
+- **熔断保护**：避免在429封禁期间继续请求
+
+### 📊 技术实现细节
+
+#### WXNetworkGate.js v1.2升级
+```javascript
+// 核心配置
+const MAX_CONCURRENCY = 3;          // 安全并发数
+const REQUEST_INTERVAL = 100;       // 请求间隔(ms)
+const COOL_DOWN_TIME = 2000;        // 熔断时间(ms)
+const MAX_RETRIES = 4;              // 最大重试次数
+
+// 熔断逻辑
+if (res.statusCode === 429) {
+    _isPaused = true;  // 全局暂停
+    setTimeout(() => {
+        _isPaused = false;  // 恢复调度
+        _scheduler();
+    }, COOL_DOWN_TIME);
+}
+```
+
+#### LoadingScene严格模式
+- 移除30秒强制跳转逻辑
+- 资源加载失败直接抛出异常
+- 异常捕获后显示重试对话框
+
+#### LoadingUI纯View化
+- 移除内部驱动逻辑
+- 保留视觉优化（防倒车、文案屏蔽）
+- 公开updateProgress方法供Scene调用
+
+### 📁 修改文件清单
+**核心修改**：
+- `tools/inject-gate.js` - WXNetworkGate v1.2熔断系统
+- `src/cocos/assets/scripts/app/LoadingScene.ts` - 严格错误处理
+- `src/cocos/assets/scripts/ui/LoadingUI.ts` - 纯View组件化
+- `src/cocos/assets/scripts/app/PreloadManager.ts` - 兼容性检查
+
+**清理文件**：
+- `src/cocos/assets/scripts/util/WXNetworkGate.ts` - 移除TypeScript版本
+- `src/cocos/assets/scripts/util/WXNetworkGate.ts.meta` - 清理meta文件
+
+**其他修改**：
+- `tools/cloudflare/worker.js` - 小幅优化
+- 各应用入口文件 - 导入AbortController polyfill
+
+### ✅ 验证效果
+- **429根治**：熔断机制让服务器"冷静"，避免死循环
+- **QPS控制**：100ms间隔确保不触发WAF防火墙  
+- **稳定加载**：严格错误处理避免运行时崩溃
+- **用户体验**：重试对话框提供明确的失败反馈
+
+### 📚 方案文档
+详细设计文档：`docs/design/fix/016-究极熔断与流量整形方案.md`
+
+---
+
+## 2025-11-24 - 🛡️ [CRITICAL] 究极429解决方案修正版实施（底层API拦截+容错优化）
+
+### ✅ 测试验证
+- BloomFilter正常加载，无栈溢出错误
+- AbortController功能正常，网络请求取消可用
+- 游戏启动流程完整，无兼容性错误
+
+### 📚 最佳实践
+- 尽早导入polyfill确保全局可用
+- 分层回退策略处理平台差异
+- 分块处理避免大数据栈溢出
+- 运行时诊断提供详细兼容性信息
+
 ## 2025-11-24 - 🛡️ [CRITICAL] 究极429解决方案修正版实施（底层API拦截+容错优化）
 
 ### 🚨 核心问题彻底解决

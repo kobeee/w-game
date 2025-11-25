@@ -14,6 +14,8 @@ import { _decorator } from 'cc';
 import { HybridWordValidator } from './HybridWordValidator';
 import { ValidateResult } from '../types/words';
 import { REMOTE_MERGE_WINDOW_MS } from '../config/word-validate';
+// 导入 AbortController polyfill，确保微信小游戏兼容性
+import '../util/AbortControllerPolyfill';
 
 const { ccclass } = _decorator;
 

@@ -1,6 +1,8 @@
 import { _decorator, assetManager, SpriteFrame, JsonAsset } from 'cc';
 import { GlossService } from '../data/GlossService';
 import { AssetLoader } from '../core/AssetLoader';
+// 尽早导入 AbortController polyfill，确保微信小游戏兼容性
+import '../util/AbortControllerPolyfill';
 
 const { ccclass } = _decorator;
 
@@ -98,20 +100,14 @@ export class PreloadManager {
             this.checkWeChatNetworkStatus();
         }
 
-        try {
-            // 🔥 启动阶段：仅加载高优先级必需资源（分配 0 → 0.75 进度）
-            const startupBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.phase === 'startup');
-            await this.preloadBundleGroup(startupBundles, 0, 0.75);
+        // 🔥 启动阶段：仅加载高优先级必需资源（分配 0 → 0.75 进度）
+        const startupBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.phase === 'startup');
+        await this.preloadBundleGroup(startupBundles, 0, 0.75);
 
-            // 📚 核心词库加载（分配独立进度 0.75 → 0.95）
-            await this.loadGlossDataWithProgress(0.75, 0.95, false); // 仅加载核心词库
+        // 📚 核心词库加载（分配独立进度 0.75 → 0.95）
+        await this.loadGlossDataWithProgress(0.75, 0.95, false); // 仅加载核心词库
 
-            this.reportProgress(0.95, '核心资源加载完成，准备进入游戏');
-
-        } catch (error) {
-            console.error('[PreloadManager] 启动资源加载失败:', error);
-            this.reportProgress(0.9, '核心资源加载完成（部分使用缓存）');
-        }
+        this.reportProgress(0.95, '核心资源加载完成，准备进入游戏');
     }
 
     /**
@@ -296,10 +292,58 @@ export class PreloadManager {
     }
 
     /**
+     * 🔍 微信小游戏兼容性检查
+     * 在预加载开始前检查关键API的可用性
+     */
+    private checkCompatibility(): void {
+        console.log('[PreloadManager] 🔍 开始微信小游戏兼容性检查...');
+        
+        // 检查 AbortController
+        if (typeof AbortController === 'undefined') {
+            console.error('❌ AbortController 不可用，这会导致网络请求失败');
+        } else {
+            console.log('✅ AbortController 可用');
+        }
+        
+        // 检查微信小游戏 API
+        if (typeof wx !== 'undefined') {
+            console.log('✅ 微信小游戏环境检测成功');
+            
+            if (wx.base64ToArrayBuffer) {
+                console.log('✅ wx.base64ToArrayBuffer 可用');
+            } else {
+                console.warn('⚠️ wx.base64ToArrayBuffer 不可用，将使用回退方案');
+            }
+            
+            if (wx.getFileSystemManager) {
+                console.log('✅ wx.getFileSystemManager 可用');
+            } else {
+                console.warn('⚠️ wx.getFileSystemManager 不可用，将使用回退方案');
+            }
+        } else {
+            console.log('ℹ️ 非微信小游戏环境（浏览器预览）');
+        }
+        
+        // 检查 Base64 API
+        if (typeof btoa !== 'undefined' && typeof atob !== 'undefined') {
+            console.log('✅ 浏览器 Base64 API 可用');
+        } else {
+            console.warn('⚠️ 浏览器 Base64 API 不可用，将使用手动解码');
+        }
+        
+        console.log('[PreloadManager] 🔍 兼容性检查完成');
+    }
+
+    /**
      * 🎯 兼容性方法：预加载单个Bundle（用于LoadingUI）
      * 保持与现有preloadSingleBundle方法的兼容性，但支持微信小游戏并发控制
      */
     public async preloadSingleBundleCompat(bundleName: string, startProgress: number, endProgress: number): Promise<void> {
+        // 在首次预加载时进行兼容性检查
+        if (this.loadedBundles.size === 0) {
+            this.checkCompatibility();
+        }
+        
         // 直接调用现有的preloadSingleBundle方法，已包含并发控制和429重试
         await this.preloadSingleBundle(bundleName, startProgress, endProgress);
     }
@@ -409,7 +453,7 @@ export class PreloadManager {
     }
     
     /**
-     * 预加载单个Bundle及其关键资源（Fix 3: 增加容错机制）
+     * 预加载单个Bundle及其关键资源（Fix 016: 增加超时和容错机制）
      */
     public async ensureBundleLoaded(bundleName: string): Promise<assetManager.Bundle | null> {
         // 检查是否已加载
@@ -418,12 +462,23 @@ export class PreloadManager {
         }
 
         try {
-            const bundle = await this.loadBundleInternal(bundleName);
+            // 添加超时机制，避免无限等待
+            const bundle = await Promise.race([
+                this.loadBundleInternal(bundleName),
+                new Promise<never>((_, reject) => {
+                    setTimeout(() => {
+                        reject(new Error(`Bundle ${bundleName} 加载超时 (10s)`));
+                    }, 10000);
+                })
+            ]);
+            
             this.loadedBundles.set(bundleName, bundle);
             return bundle;
         } catch (error) {
-            // Fix 3: 容错处理 - 加载失败不抛出异常，返回null
-            console.error(`[PreloadManager] Bundle ${bundleName} 最终加载失败，跳过`, error);
+            console.error(`[PreloadManager] 🚨 Bundle ${bundleName} 加载失败:`, error);
+            
+            // Fix 016: 不再直接抛出错误，而是返回 null 让上层处理
+            // 这样可以避免整个加载流程完全卡死
             return null;
         }
     }
@@ -520,12 +575,11 @@ export class PreloadManager {
         // 判断资源类型（SpriteFrame或JsonAsset）
         const assetType = assetPath.includes('/spriteFrame') ? SpriteFrame : JsonAsset;
 
-        return new Promise<void>((resolve) => { // 注意这里不 reject
+        return new Promise<void>((resolve, reject) => { 
             bundle.load(assetPath, assetType, (err: Error | null, asset: SpriteFrame | JsonAsset) => {
                 if (err) {
-                    // Fix 3: 资源预热失败仅警告，不阻塞流程
-                    console.warn(`[PreloadManager] 资源预热失败 ${bundleName}:${assetPath}, 跳过`);
-                    resolve(); // 依然 resolve，保证 Promise.all 能完成
+                    console.warn(`[PreloadManager] 资源预热失败 ${bundleName}:${assetPath}`);
+                    reject(err); // 失败则 reject
                     return;
                 }
                 

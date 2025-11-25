@@ -14,6 +14,8 @@ import { WordStat, GameResult } from '../types/words';
 import { HINT_STAY_MS } from '../config/word-validate';
 import { WordPoolSelector, WordPoolConfig, Difficulty, WordPoolStrategy } from '../core/WordPoolSelector';
 import { PreloadManager } from './PreloadManager';
+// 尽早导入 AbortController polyfill，确保微信小游戏兼容性
+import '../util/AbortControllerPolyfill';
 
 const { ccclass, property } = _decorator;
 

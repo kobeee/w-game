@@ -5,6 +5,8 @@ import { GameBoard } from '../ui/GameBoard';
 import { HUD } from '../ui/HUD';
 import { GlossSheet } from '../ui/GlossSheet';
 import { AudioMgr } from '../util/AudioMgr';
+// 尽早导入 AbortController polyfill，确保微信小游戏兼容性
+import '../util/AbortControllerPolyfill';
 // 使用assetManager.loadBundle动态加载远程Asset Bundle资源
 
 

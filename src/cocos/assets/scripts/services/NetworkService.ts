@@ -18,6 +18,8 @@
  */
 
 import { sys } from 'cc';
+// 导入 AbortController polyfill，确保微信小游戏兼容性
+import '../util/AbortControllerPolyfill';
 import {
     DEFINITION_MAX_LEN,
     PERSIST_TTL_VALID_DAYS,

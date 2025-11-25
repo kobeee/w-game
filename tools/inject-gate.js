@@ -1,43 +1,56 @@
 /**
- * WXNetworkGate.js v1.1
- * 究极429解决方案修正版
- * 
- * 功能：劫持 wx.request 和 wx.downloadFile，实现全局并发控制
- * 修复：Polyfill wx.onPerformanceEntry、降低并发至4、增强网络错误重试
+ * WXNetworkGate.js v1.2
+ * 016-熔断与流量整形版
+ * 核心目标：从根本上消除 429，通过全局熔断机制让服务器“冷静”。
  */
 
 (function() {
     if (typeof wx === 'undefined') return;
-    
-    // ----------------------------------------------------------------
-    // Fix 1: Polyfill wx.onPerformanceEntry to prevent engine crash
-    // ----------------------------------------------------------------
-    if (!wx.onPerformanceEntry) {
-        console.log('[WXGate] Polyfill wx.onPerformanceEntry');
-        wx.onPerformanceEntry = function() {};
-    }
-    // Prevent multiple injections
     if (wx.__network_gate_installed__) return;
 
-    console.log('[WXGate] 初始化全局网络拦截器 v1.1...');
+    console.log('[WXGate] 初始化 016 熔断防御系统...');
 
-    // ================= 配置区 =================
-    // Fix 2: Lower concurrency from 6 to 4 for absolute safety
-    const MAX_CONCURRENCY = 4; 
-    const RETRY_COUNT = 3;     
-    const RETRY_DELAY = 1000;  
-    // =========================================
+    // Polyfill
+    if (!wx.onPerformanceEntry) {
+        wx.onPerformanceEntry = function() {};
+    }
+
+    // ================= 核心配置 =================
+    const MAX_CONCURRENCY = 3;      // 进一步降低并发，稳字当头
+    const REQUEST_INTERVAL = 100;   // [新增] 两次请求发出的最小间隔(ms)，防止瞬时 QPS 过高
+    const COOL_DOWN_TIME = 2000;    // [新增] 触发 429 后的全局暂停时间(ms)
+    const MAX_RETRIES = 4;          // 最大重试次数
+    // ===========================================
 
     const _originalRequest = wx.request;
     const _originalDownload = wx.downloadFile;
 
-    let _runningCount = 0;
     const _queue = [];
+    let _runningCount = 0;
+    let _isPaused = false;          // 全局熔断开关
+    let _lastRequestTime = 0;       // 上一次发送请求的时间戳
 
+    // 核心调度器
     function _scheduler() {
+        // 1. 熔断检查：如果处于暂停状态，绝对不发请求
+        if (_isPaused) return;
+
+        // 2. 并发检查
         if (_runningCount >= MAX_CONCURRENCY) return;
+
+        // 3. 队列检查
         if (_queue.length === 0) return;
 
+        // 4. 频控检查：确保请求之间有时间间隔
+        const now = Date.now();
+        const timeSinceLast = now - _lastRequestTime;
+        if (timeSinceLast < REQUEST_INTERVAL) {
+            // 没到时间，延迟调度
+            setTimeout(_scheduler, REQUEST_INTERVAL - timeSinceLast);
+            return;
+        }
+
+        // --- 发射请求 ---
         const taskParams = _queue.shift();
         if (taskParams._isAborted) {
             _scheduler();
@@ -45,147 +58,126 @@
         }
 
         _runningCount++;
-        
-        const { type, options, virtualTask, retry } = taskParams;
+        _lastRequestTime = Date.now(); // 更新发送时间
+
+        const { type, options, virtualTask, retryCount } = taskParams;
         const originalMethod = type === 'request' ? _originalRequest : _originalDownload;
 
-        const originalSuccess = options.success;
-        const originalFail = options.fail;
-        const originalComplete = options.complete;
-
-        // Fix 3: Enhanced Error Handling & Retry Logic
-        const handleRetry = (reason, resOrErr) => {
-            if (retry > 0) {
-                const delay = RETRY_DELAY + Math.random() * 500; // Add jitter
-                console.warn(`[WXGate] ${reason}, ${Math.floor(delay)}ms后重试... (剩余${retry}次) URL: ${options.url}`);
+        // 封装 Success
+        const newSuccess = (res) => {
+            // === 触发 429 熔断 ===
+            if (res.statusCode === 429) {
+                console.error(`[WXGate] 🚨 触发 429！启用熔断机制，全局暂停 ${COOL_DOWN_TIME}ms`);
                 
-                // Critical: Decrement count immediately so we don't block while waiting
-                _runningCount--; 
+                // 1. 立即开启熔断，阻止后续请求
+                _isPaused = true;
+                
+                // 2. 立即归还并发计数（因为这个请求实际上失败了，不算占用连接）
+                _runningCount--;
+
+                // 3. 设置指数退避冷却定时器（避免死循环）
+                const backoffTime = COOL_DOWN_TIME * (MAX_RETRIES - retryCount + 1); // 逐次增加冷却时间
+                console.log(`[WXGate] 🧊 指数退避冷却 ${backoffTime}ms`);
                 
                 setTimeout(() => {
-                    _queue.unshift({
-                        type,
-                        options,
-                        virtualTask,
-                        retry: retry - 1,
-                        _isAborted: false
-                    });
-                    _scheduler();
-                }, delay);
-                return true; // Retrying
+                    console.log('[WXGate] 🧊 熔断结束，恢复传输');
+                    _isPaused = false;
+                    
+                    // 4. 执行重试逻辑（在熔断结束后）
+                    if (retryCount > 0) {
+                        console.warn(`[WXGate] 重新入队 (剩余重试 ${retryCount}): ${options.url}`);
+                        _queue.unshift({
+                            type, options, virtualTask, retryCount: retryCount - 1, _isAborted: false
+                        });
+                    } else {
+                        // 重试耗尽，真的失败了
+                        console.error(`[WXGate] ❌ 重试耗尽，请求失败: ${options.url}`);
+                        if (options.fail) options.fail({ errMsg: 'request:fail 429 limit exceeded' });
+                    }
+                    
+                    _scheduler(); // 重新激活调度
+                }, backoffTime);
+                return;
             }
-            return false; // No more retries
+
+            // 正常成功
+            _runningCount--;
+            if (options.success) options.success(res);
+            _scheduler();
         };
 
-        const newOptions = Object.assign({}, options, {
-            success: (res) => {
-                // Handle 429 strictly
-                if (res.statusCode === 429) {
-                    if (handleRetry('触发429', res)) return;
-                }
-                // Handle 5xx Server Errors (Optional, but good for stability)
-                if (res.statusCode >= 500 && res.statusCode < 600) {
-                    if (handleRetry(`服务器错误${res.statusCode}`, res)) return;
-                }
+        // 封装 Fail
+        const newFail = (err) => {
+            const errMsg = err ? (err.errMsg || '') : '';
+            // 检查是否是网络层面的拥堵/断开
+            const isNetError = errMsg.indexOf('CONNECTION_CLOSED') >= 0 || errMsg.indexOf('timeout') >= 0;
+
+            if (isNetError && retryCount > 0) {
+                console.warn(`[WXGate] 网络波动 (${errMsg})，稍后重试...`);
+                _runningCount--;
                 
-                if (originalSuccess) originalSuccess(res);
-            },
-            fail: (err) => {
-                const errMsg = err ? (err.errMsg || err.message || '') : '';
-                
-                // Handle Network Errors (Connection closed, timeout, etc.)
-                // Fix 1 recurrence: ERR_CONNECTION_CLOSED
-                if (
-                    errMsg.indexOf('429') >= 0 || 
-                    errMsg.indexOf('CONNECTION_CLOSED') >= 0 ||
-                    errMsg.indexOf('timeout') >= 0 ||
-                    errMsg.indexOf('fail') >= 0 // Generic fail often means network issue
-                ) {
-                    if (handleRetry(`网络错误(${errMsg})`, err)) return;
-                }
-                
-                if (originalFail) originalFail(err);
-            },
-            complete: (res) => {
-                // Only decrement if we are NOT retrying (retrying logic handles decrement itself)
-                // We check this by inferring if success/fail handled it. 
-                // Actually, safer way: handleRetry returns true, we skip decrement here? 
-                // No, handleRetry already decremented. 
-                // BUT, wait: if success calls handleRetry, it decrements. 
-                // originalComplete should be called ONLY if we are finished (success/fail exhausted).
-                // 
-                // To simplify: We only call originalComplete if we are NOT retrying.
-                // And we only decrement here if we are NOT retrying.
-                
-                const is429 = (res.statusCode === 429);
-                const isNetErr = res.errMsg && (res.errMsg.indexOf('429') >= 0 || res.errMsg.indexOf('CONNECTION_CLOSED') >= 0);
-                
-                if ((is429 || isNetErr) && retry > 0) {
-                    // Retrying, do nothing here (handleRetry did the work)
-                } else {
-                    _runningCount--;
+                // 网络错误通常也意味着拥堵，小憩一下
+                setTimeout(() => {
+                    _queue.unshift({
+                        type, options, virtualTask, retryCount: retryCount - 1, _isAborted: false
+                    });
                     _scheduler();
-                    if (originalComplete) originalComplete(res);
-                }
+                }, 500);
+                return;
             }
-        });
 
+            _runningCount--;
+            if (options.fail) options.fail(err);
+            _scheduler();
+        };
+
+        const newOptions = Object.assign({}, options, { success: newSuccess, fail: newFail });
+        
+        // 调用原始 API
         const realTask = originalMethod.call(wx, newOptions);
-
+        
+        // 桥接 Task 对象（用于取消等操作）
         if (virtualTask && realTask) {
             virtualTask._bridgeTo(realTask);
         }
     }
 
+    // 虚拟 Task 类
     class VirtualTask {
-        constructor(queueItem) {
-            this._queueItem = queueItem;
+        constructor() {
             this._realTask = null;
-            this._cbs = { progress: null, headers: null };
+            this._cbs = {};
         }
-
         _bridgeTo(realTask) {
             this._realTask = realTask;
-            if (this._cbs.progress) realTask.onProgressUpdate(this._cbs.progress);
-            if (this._cbs.headers) realTask.onHeadersReceived(this._cbs.headers);
+            // 重新绑定之前的监听
+            if (this._cbs.onProgressUpdate) realTask.onProgressUpdate(this._cbs.onProgressUpdate);
+            if (this._cbs.onHeadersReceived) realTask.onHeadersReceived(this._cbs.onHeadersReceived);
         }
-
-        abort() {
-            if (this._queueItem) this._queueItem._isAborted = true;
-            if (this._realTask) this._realTask.abort();
-        }
-
-        onProgressUpdate(cb) { 
-            this._cbs.progress = cb; 
-            if (this._realTask) this._realTask.onProgressUpdate(cb); 
-        }
-        onHeadersReceived(cb) { 
-            this._cbs.headers = cb; 
-            if (this._realTask) this._realTask.onHeadersReceived(cb); 
-        }
-        offProgressUpdate(cb) { if(this._realTask) this._realTask.offProgressUpdate(cb); }
-        offHeadersReceived(cb) { if(this._realTask) this._realTask.offHeadersReceived(cb); }
+        abort() { if (this._realTask) this._realTask.abort(); }
+        onProgressUpdate(cb) { this._cbs.onProgressUpdate = cb; if (this._realTask) this._realTask.onProgressUpdate(cb); }
+        onHeadersReceived(cb) { this._cbs.onHeadersReceived = cb; if (this._realTask) this._realTask.onHeadersReceived(cb); }
+        offProgressUpdate(cb) { if (this._realTask) this._realTask.offProgressUpdate(cb); }
+        offHeadersReceived(cb) { if (this._realTask) this._realTask.offHeadersReceived(cb); }
     }
 
+    // 劫持 wx.request
     wx.request = function(options) {
         if (options.ignoreQueue) return _originalRequest.call(wx, options);
-        const qItem = { type: 'request', options, virtualTask: null, retry: RETRY_COUNT, _isAborted: false };
-        const task = new VirtualTask(qItem);
-        qItem.virtualTask = task;
-        _queue.push(qItem);
+        const virtualTask = new VirtualTask();
+        _queue.push({ type: 'request', options, virtualTask, retryCount: MAX_RETRIES, _isAborted: false });
         _scheduler();
-        return task;
+        return virtualTask;
     };
 
+    // 劫持 wx.downloadFile
     wx.downloadFile = function(options) {
-        const qItem = { type: 'download', options, virtualTask: null, retry: RETRY_COUNT, _isAborted: false };
-        const task = new VirtualTask(qItem);
-        qItem.virtualTask = task;
-        _queue.push(qItem);
+        const virtualTask = new VirtualTask();
+        _queue.push({ type: 'download', options, virtualTask, retryCount: MAX_RETRIES, _isAborted: false });
         _scheduler();
-        return task;
+        return virtualTask;
     };
 
     wx.__network_gate_installed__ = true;
-    console.log('[WXGate] 全局网络拦截器已激活 v1.1, 并发限制:', MAX_CONCURRENCY);
+    console.log(`[WXGate] 016版已激活 | 并发: ${MAX_CONCURRENCY} | 间隔: ${REQUEST_INTERVAL}ms | 熔断: ${COOL_DOWN_TIME}ms`);
 })();

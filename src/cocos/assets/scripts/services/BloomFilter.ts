@@ -12,16 +12,25 @@ class BloomFilterCore {
      * @param base64String Base64 编码的字符串
      */
     private base64Decode(base64String: string): string {
-        // 检查是否在微信小游戏环境
+        // 优先尝试微信小游戏原生 API
+        if (typeof wx !== 'undefined' && wx.base64ToArrayBuffer) {
+            try {
+                const arrayBuffer = wx.base64ToArrayBuffer(base64String);
+                return this.arrayBufferToString(arrayBuffer);
+            } catch (e) {
+                console.warn('[BloomFilter] wx.base64ToArrayBuffer 失败，尝试手动解码:', e);
+            }
+        }
+
+        // 回退到文件系统方式（较慢但兼容性好）
         if (typeof wx !== 'undefined' && wx.getFileSystemManager) {
-            // 微信小游戏环境，使用 wx.getFileSystemManager().readFileSync 的 base64 解码
             try {
                 const fs = wx.getFileSystemManager();
                 // 创建临时文件路径
                 const tempFilePath = `${wx.env.USER_DATA_PATH}/temp_base64_${Date.now()}.txt`;
                 // 写入 base64 数据
                 fs.writeFileSync(tempFilePath, base64String, 'base64');
-                // 读取为二进制数据再转回字符串
+                // 读取为二进制数据
                 const buffer = fs.readFileSync(tempFilePath);
                 // 删除临时文件
                 try {
@@ -29,15 +38,29 @@ class BloomFilterCore {
                 } catch (e) {
                     // 忽略删除错误
                 }
-                // 将 ArrayBuffer 转换为字符串
-                return String.fromCharCode.apply(null, new Uint8Array(buffer));
+                return this.arrayBufferToString(buffer);
             } catch (e) {
-                console.warn('[BloomFilter] 微信小游戏 Base64 解码失败，回退到手动解码:', e);
+                console.warn('[BloomFilter] 微信小游戏文件系统解码失败，回退到手动解码:', e);
             }
         }
         
-        // 回退方案：手动实现 Base64 解码（兼容所有环境）
+        // 最终回退方案：手动实现 Base64 解码（兼容所有环境）
         return this.manualBase64Decode(base64String);
+    }
+
+    /**
+     * 将 ArrayBuffer 转换为字符串（防止栈溢出）
+     * @param buffer ArrayBuffer 数据
+     */
+    private arrayBufferToString(buffer: ArrayBuffer): string {
+        const uint8Array = new Uint8Array(buffer);
+        let result = '';
+        const chunkSize = 8 * 1024; // 8KB chunks
+        for (let i = 0; i < uint8Array.length; i += chunkSize) {
+            const chunk = uint8Array.subarray(i, i + chunkSize);
+            result += String.fromCharCode.apply(null, chunk);
+        }
+        return result;
     }
 
     /**

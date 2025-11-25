@@ -203,13 +203,19 @@ async function handleRequest(request) {
     }
   }
 
-  // 4. 转发请求，并包含原始的 body/headers 和 method
-  const response = await fetch(upstreamUrlString, {
+  // 4. 转发请求，确保 GET 请求不包含 body（解决 HTTP 500 错误）
+  const fetchOptions = {
     method: request.method,
     headers: headers,
-    body: body,
     redirect: 'follow'
-  });
+  };
+  
+  // 只有非 GET/HEAD/OPTIONS 请求才包含 body
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) {
+    fetchOptions.body = body;
+  }
+  
+  const response = await fetch(upstreamUrlString, fetchOptions);
 
   // 5. 处理从上游返回的响应
   const newResponse = new Response(response.body, response);
