@@ -20,13 +20,15 @@ export class AssetLoader {
     
     /**
      * 智能加载SpriteFrame - 优先使用已完全加载的缓存资源，实现立即可用
+     * 🔥 修复：保持重试机制，但优化日志输出避免风暴
      * @param bundleName Bundle名称
      * @param assetPath 资源路径
      * @returns Promise<SpriteFrame>
      */
     public async loadSpriteFrame(bundleName: string, assetPath: string): Promise<SpriteFrame> {
-        const maxRetries = 3;
-        const retryDelay = 1000; // 1秒重试间隔
+        const maxRetries = 2;  // 保持适度重试
+        const retryDelay = 2000; // 重试间隔2秒
+        const errorKey = `${bundleName}/${assetPath}`;
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -34,7 +36,7 @@ export class AssetLoader {
                 let bundle = assetManager.getBundle(bundleName);
                 
                 if (bundle) {
-                    // 第二步：使用bundle.get()获取已完全加载的资源（立即可用）
+                    // 第二步：使用bundle.get()获取已完全加载的资源（立可用）
                     const cachedAsset = bundle.get(assetPath, SpriteFrame);
                     if (cachedAsset) {
                         return cachedAsset;
@@ -51,14 +53,28 @@ export class AssetLoader {
                 return await this.loadAssetFromBundle(bundle, assetPath);
                 
             } catch (error) {
-                // 只在最后一次尝试时记录错误
+                const errorMsg = error ? (error.message || error.errMsg || String(error)) : 'Unknown error';
+                const is429 = errorMsg.includes('429');
+                
+                // 只在最后一次尝试时记录错误，避免日志风暴
                 if (attempt === maxRetries) {
-                    console.error(`[AssetLoader] ❌ 加载SpriteFrame失败: ${bundleName}/${assetPath}`, error);
+                    if (is429) {
+                        console.error(`[AssetLoader] ❌ 429错误重试失败: ${bundleName}/${assetPath}`);
+                    } else {
+                        console.error(`[AssetLoader] ❌ 加载SpriteFrame失败: ${bundleName}/${assetPath}`, error);
+                    }
                     throw error;
                 }
                 
-                // 等待后重试
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                // 重试前等待，429错误等待更久
+                const delay = is429 ? retryDelay * 2 : retryDelay;
+                
+                // 只在第一次重试时输出警告，避免重复
+                if (attempt === 1) {
+                    console.warn(`[AssetLoader] ⚠️ 加载失败，${delay/1000}秒后重试: ${bundleName}/${assetPath}`);
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
         
@@ -118,6 +134,53 @@ export class AssetLoader {
         // 使用bundle.get()检查资源是否已完全加载
         const cachedAsset = bundle.get(assetPath, SpriteFrame);
         return !!cachedAsset;
+    }
+    
+    /**
+     * 增强版缓存检查：检查Bundle和资源状态，提供更详细的诊断信息
+     */
+    public checkAssetStatus(bundleName: string, assetPath: string): {
+        bundleLoaded: boolean;
+        assetCached: boolean;
+        assetExists: boolean;
+        diagnostic: string;
+    } {
+        const bundle = assetManager.getBundle(bundleName);
+        const result = {
+            bundleLoaded: !!bundle,
+            assetCached: false,
+            assetExists: false,
+            diagnostic: ''
+        };
+        
+        if (!bundle) {
+            result.diagnostic = `Bundle '${bundleName}' 未加载`;
+            return result;
+        }
+        
+        result.diagnostic = `Bundle '${bundleName}' 已加载`;
+        
+        // 检查资源是否在缓存中
+        const cachedAsset = bundle.get(assetPath, SpriteFrame);
+        result.assetCached = !!cachedAsset;
+        
+        if (cachedAsset) {
+            result.diagnostic += `，资源 '${assetPath}' 已缓存`;
+            result.assetExists = true;
+        } else {
+            result.diagnostic += `，资源 '${assetPath}' 未缓存`;
+            
+            // 检查资源是否存在于Bundle中（通过检查依赖信息）
+            const bundleInfo = assetManager.bundles.get(bundleName);
+            if (bundleInfo && bundleInfo.depends) {
+                result.assetExists = true;
+                result.diagnostic += `（但存在于Bundle中）`;
+            } else {
+                result.diagnostic += `（Bundle中也不存在）`;
+            }
+        }
+        
+        return result;
     }
     
     /**

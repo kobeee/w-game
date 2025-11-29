@@ -87,7 +87,7 @@ export class LetterTile extends Component {
     }
 
     private async loadTileSprites(): Promise<void> {
-        const states: TileState[] = ['selectable', 'highlight', 'correct', 'wrong', 'disabled'];
+        const states: TileState[] = ['selectable', 'highlight', 'correct', 'disabled', 'wrong'];
         const assetLoader = AssetLoader.getInstance();
         let successCount = 0;
         let hasNewLoad = false;
@@ -113,7 +113,15 @@ export class LetterTile extends Component {
                     console.error(`[LetterTile] ❌ 瓦片加载失败: ${state} (返回null)`);
                 }
             } catch (error) {
-                console.error(`[LetterTile] ❌ 无法加载瓦片资源: ${state}`, error);
+                // 🔥 优化日志：只记录关键错误，减少噪音
+                const errorMsg = error ? (error.message || String(error)) : '';
+                const is429 = errorMsg.includes('429');
+                
+                // 429错误只记录一次，其他错误正常记录
+                if (!is429 || state === 'selectable') {
+                    console.error(`[LetterTile] ❌ 无法加载瓦片资源: ${state}`, error);
+                }
+                
                 // 关键修复：不因为单个资源失败就停止整个过程
             }
         }

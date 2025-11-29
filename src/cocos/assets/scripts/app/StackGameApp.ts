@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, director, Sprite, UITransform, Button, Prefab, Vec3, ScrollView } from 'cc';
+import { _decorator, Component, Node, Label, director, Sprite, UITransform, Button, Prefab, Vec3, ScrollView, assetManager, SpriteFrame } from 'cc';
 import { LevelGenerator } from '../core/LevelGenerator';
 import { IncrementalWordMatcher } from '../core/WordMatcher';
 import { StackBoard } from '../ui/StackBoard';
@@ -1057,21 +1057,37 @@ export class StackGameApp extends Component {
      */
     private async loadRemoteAssets(): Promise<void> {
         try {
-
             const assetLoader = AssetLoader.getInstance();
 
-            // 检查资源是否已完全加载并缓存
-            const isCached = assetLoader.isAssetCached('bundle', 'bg/game_scene_bg/spriteFrame');
-
-            if (!isCached) {
-                console.warn('[StackGameApp] 场景背景图未预加载，开始动态加载');
+            // 使用增强版缓存检查，提供详细诊断
+            const assetStatus = assetLoader.checkAssetStatus('bundle', 'bg/game_scene_bg/spriteFrame');
+            console.log('[StackGameApp] 资源状态检查:', assetStatus.diagnostic);
+            
+            if (assetStatus.assetCached) {
+                // 资源已在缓存中，直接获取使用（避免网络请求）
+                const bundle = assetManager.getBundle('bundle');
+                const spriteFrame = bundle?.get('bg/game_scene_bg/spriteFrame', SpriteFrame);
+                
+                if (spriteFrame && this.backgroundSprite) {
+                    this.backgroundSprite.spriteFrame = spriteFrame;
+                    console.log('[StackGameApp] ✅ 场景背景图已从缓存获取（无网络请求）');
+                    return;
+                }
+            }
+            
+            // 资源未缓存，需要动态加载
+            if (!assetStatus.bundleLoaded) {
+                console.warn('[StackGameApp] Bundle未加载，开始动态加载Bundle');
+            } else {
+                console.warn('[StackGameApp] 场景背景图未在缓存中，开始动态加载');
             }
 
-            // 使用AssetLoader从缓存获取（已完全加载，立即可用）
+            // 使用AssetLoader加载（仅在缓存未命中时）
             const spriteFrame = await assetLoader.loadSpriteFrame('bundle', 'bg/game_scene_bg/spriteFrame');
 
             if (this.backgroundSprite) {
                 this.backgroundSprite.spriteFrame = spriteFrame;
+                console.log('[StackGameApp] ✅ 场景背景图动态加载完成');
             }
 
         } catch (error) {

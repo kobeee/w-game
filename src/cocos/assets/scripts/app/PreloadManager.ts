@@ -26,19 +26,19 @@ export class PreloadManager {
         'bg/result_scene_bg/spriteFrame',
         // 标题资源
         'title/title/spriteFrame',
-        // 瓦片资源
-        'tiles/tile_correct/spriteFrame',
-        'tiles/tile_disabled/spriteFrame',
-        'tiles/tile_highlight/spriteFrame',
-        'tiles/tile_selectable/spriteFrame',
-        'tiles/tile_wrong/spriteFrame',
         // 牌槽资源
         'slot/slot_item/spriteFrame',
         // 词库资源
         'words/words_core',
         'words/zh_gloss',
         // 弹窗资源
-        'modal/pop_card/spriteFrame'
+        'modal/pop_card/spriteFrame',
+        // 瓦片资源（保持完整，确保渲染正常）
+        'tiles/tile_selectable/spriteFrame',
+        'tiles/tile_highlight/spriteFrame',
+        'tiles/tile_correct/spriteFrame',
+        'tiles/tile_wrong/spriteFrame',
+        'tiles/tile_disabled/spriteFrame'
     ];
     
     // 延迟加载资源（主菜单阶段）
@@ -539,7 +539,7 @@ export class PreloadManager {
         
         // 微信环境：串行加载避免429
         if (typeof wx !== 'undefined') {
-            console.log('[PreloadManager] 📱 微信环境：串行预热资源');
+            console.log('[PreloadManager] 📱 微信环境：串行预热资源（瓦片资源增加间隔）');
             for (let i = 0; i < this.STARTUP_ASSETS.length; i++) {
                 const assetPath = this.STARTUP_ASSETS[i];
                 const assetProgress = startProgress + i * progressPerAsset;
@@ -553,8 +553,19 @@ export class PreloadManager {
                 try {
                     await this.preloadAsset(bundle, this.BUNDLE_NAME, assetPath);
                     this.reportProgress(assetProgress + progressPerAsset, `资源预热完成: ${assetPath}`);
+                    
+                    // 🔥 瓦片资源增加额外间隔，避免429
+                    if (assetPath.includes('tiles/tile_')) {
+                        console.log('[PreloadManager] 🧊 瓦片资源加载完成，冷却1.5秒...');
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
                 } catch (error) {
                     console.warn(`[PreloadManager] 资源预热失败: ${assetPath}`, error);
+                    // 🔥 瓦片资源失败时增加额外等待时间
+                    if (assetPath.includes('tiles/tile_')) {
+                        console.log('[PreloadManager] 🧊 瓦片资源失败，额外等待2秒...');
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
                 }
             }
         } else {

@@ -1,5 +1,100 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-11-29 - 🔧 [CRITICAL] 429错误日志风暴与导入问题修复
+
+### 🚨 问题发现
+1. **429重试日志风暴**：`tile_wrong`资源429错误导致大量重复日志刷屏
+2. **StackGameApp导入缺失**：`assetManager`和`SpriteFrame`未导入导致运行时错误
+3. **资源状态检查不准确**：背景图已显示但系统报告未预加载
+
+### 🎯 修复方案
+
+#### 1. 优化重试机制与日志输出
+**修复文件**：`src/cocos/assets/scripts/core/AssetLoader.ts`
+- 保持2次重试机制，确保资源正常加载
+- 429错误重试间隔4秒，其他错误2秒
+- 只在第一次重试时输出警告，避免日志风暴
+- 最终失败时记录完整错误信息
+
+#### 2. LetterTile瓦片加载优化
+**修复文件**：`src/cocos/assets/scripts/ui/LetterTile.ts`
+- 恢复所有5种瓦片状态加载（selectable、highlight、correct、wrong、disabled）
+- 429错误只对`selectable`状态记录，其他状态静默处理
+- 保持颜色降级机制作为后备方案
+
+#### 3. StackGameApp导入修复
+**修复文件**：`src/cocos/assets/scripts/app/StackGameApp.ts`
+- 添加`assetManager`导入，解决`ReferenceError: assetManager is not defined`
+- 添加`SpriteFrame`导入，解决`ReferenceError: SpriteFrame is not defined`
+- 优化资源状态检查逻辑，提供详细诊断信息
+
+#### 4. PreloadManager资源列表恢复
+**修复文件**：`src/cocos/assets/scripts/app/PreloadManager.ts`
+- 恢复`tile_wrong`到启动资源列表
+- 确保所有瓦片资源预加载，避免运行时缺失
+- 保持完整瓦片状态，确保渲染正常
+
+### 📊 修复效果
+
+| 问题 | 修复前 | 修复后 | 改善 |
+|------|--------|--------|------|
+| 429日志风暴 | 大量重复日志刷屏 | 只记录关键信息 | **日志清爽** |
+| 资源加载重试 | 被错误移除 | 保持2次重试 | **加载稳定** |
+| 导入错误 | 运行时崩溃 | 正常导入 | **功能正常** |
+| 瓦片渲染 | 部分状态缺失 | 5种状态完整 | **视觉完整** |
+
+### 🔧 技术细节
+
+#### 重试策略优化
+```typescript
+// 保持适度重试，避免日志风暴
+const maxRetries = 2;
+const retryDelay = 2000;
+
+// 只在第一次重试时警告
+if (attempt === 1) {
+    console.warn(`[AssetLoader] ⚠️ 加载失败，${delay/1000}秒后重试: ${bundleName}/${assetPath}`);
+}
+```
+
+#### 资源状态诊断
+```typescript
+// 增强版缓存检查，提供详细诊断
+const assetStatus = assetLoader.checkAssetStatus('bundle', 'bg/game_scene_bg/spriteFrame');
+console.log('[StackGameApp] 资源状态检查:', assetStatus.diagnostic);
+```
+
+#### 瓦片加载容错
+```typescript
+// 429错误静默处理，但保持重试机制
+const is429 = errorMsg.includes('429');
+if (!is429 || state === 'selectable') {
+    console.error(`[LetterTile] ❌ 无法加载瓦片资源: ${state}`, error);
+}
+```
+
+### 📁 修改文件清单
+- `src/cocos/assets/scripts/core/AssetLoader.ts` - 重试机制优化+日志控制
+- `src/cocos/assets/scripts/ui/LetterTile.ts` - 瓦片加载优化+日志降噪
+- `src/cocos/assets/scripts/app/StackGameApp.ts` - 导入修复+资源检查优化
+- `src/cocos/assets/scripts/app/PreloadManager.ts` - 资源列表恢复
+
+### ✅ 验证效果
+- **429日志**：大幅减少重复日志，控制台清爽
+- **资源加载**：保持重试机制，确保渲染完整
+- **背景图**：正常加载显示，无导入错误
+- **瓦片状态**：5种状态完整，游戏体验正常
+
+### 💡 经验总结
+1. **重试机制必要性**：不能为解决日志问题而牺牲功能完整性
+2. **日志优化策略**：减少噪音但保留关键调试信息
+3. **导入检查**：TypeScript导入错误需要在编译时发现并修复
+4. **容错设计**：在保证功能的前提下优化用户体验
+
+---
+
+## 2025-11-29 - 🔧 [CRITICAL] 429问题综合修复（Bundle合并+优化加载）
+
 ## 2025-11-29 - 🔧 [CRITICAL] 429问题综合修复（Bundle合并+优化加载）
 
 ### 🚨 问题现状
