@@ -1,4 +1,4 @@
-import { _decorator, Component, Label, ProgressBar, Sprite, tween, Vec3, Tween, director } from 'cc';
+import { _decorator, Component, Label, ProgressBar, Sprite, tween, Vec3, Tween, director, assetManager } from 'cc';
 import { PreloadManager } from '../app/PreloadManager';
 // 尽早导入 AbortController polyfill，确保微信小游戏兼容性
 import '../util/AbortControllerPolyfill';
@@ -42,6 +42,7 @@ export class LoadingUI extends Component {
     private currentTipIndex: number = 0;
     private _lastProgress: number = 0;
     private _isLoading: boolean = false;
+    private hasNavigated: boolean = false;
     private preloadManager: PreloadManager = null!;
 
     protected onLoad(): void {
@@ -114,23 +115,115 @@ export class LoadingUI extends Component {
     /**
      * 跳转到主菜单
      */
-    private navigateToMainMenu(): void {
+    private async navigateToMainMenu(): Promise<void> {
+        if (this.hasNavigated) return;
+        this.hasNavigated = true;
         console.log('[LoadingUI] 准备跳转到 MainMenu');
 
-        try {
-            director.loadScene('MainMenu', (err) => {
-                if (err) {
-                    console.error('[LoadingUI] 跳转 MainMenu 失败:', err);
-                    this._isLoading = false;
-                    this.showRetryDialog();
+        // ✅ 先预加载场景及MainMenu需要的Bundle资源
+        return new Promise<void>((resolve, reject) => {
+            console.log('[LoadingUI] 开始预加载 MainMenu 场景及资源...');
+
+            // 第一步：预加载场景（容错处理：429失败也继续）
+            director.preloadScene('MainMenu', (error) => {
+                if (error) {
+                    console.warn('[LoadingUI] ⚠️ MainMenu场景预加载失败（可能是429），但继续尝试切换:', error);
+                    // 🔥 不reject，继续尝试直接切换场景
+                    this.directLoadScene();
+                    return;
                 }
+
+                console.log('[LoadingUI] ✅ MainMenu场景预加载完成，开始预加载Bundle资源...');
+
+                // 第二步：预加载MainMenu会动态加载的Bundle资源
+                this.preloadMainMenuBundleResources().then(() => {
+                    console.log('[LoadingUI] ✅ MainMenu Bundle资源预加载完成，开始切换');
+
+                    // 所有资源预加载完成后再切换场景
+                    this.directLoadScene();
+                }).catch((bundleError) => {
+                    console.warn('[LoadingUI] ⚠️ Bundle资源预加载失败，但继续尝试切换:', bundleError);
+                    // Bundle预加载失败也尝试切换场景
+                    this.directLoadScene();
+                });
             });
+        });
+    }
+
+    /**
+     * 预加载MainMenu会动态加载的Bundle资源
+     */
+    private async preloadMainMenuBundleResources(): Promise<void> {
+        console.log('[LoadingUI] 预加载MainMenu Bundle资源...');
+        
+        try {
+            // 🎯 简化：现在只有一个Bundle，直接加载关键资源
+            const menuAssets = [
+                { path: 'bg/main_scene_bg/spriteFrame' },
+                { path: 'title/title/spriteFrame' }
+            ];
+            
+            // 🎯 微信小游戏环境下串行加载，避免并发限制
+            if (typeof wx !== 'undefined') {
+                console.log('[LoadingUI] 📱 微信小游戏环境：串行预加载MainMenu资源');
+                
+                for (const assetConfig of menuAssets) {
+                    try {
+                        console.log(`[LoadingUI] 📦 预加载资源: ${assetConfig.path}`);
+                        await this.preloadSpecificAsset('bundle', assetConfig.path);
+                        console.log(`[LoadingUI] ✅ 资源预加载完成: ${assetConfig.path}`);
+                        
+                        // 资源间延迟，避免触发429
+                        await new Promise(resolve => setTimeout(resolve, 150));
+                    } catch (e) {
+                        console.warn(`[LoadingUI] 资源预加载跳过: ${assetConfig.path}`, e);
+                    }
+                }
+            } else {
+                // 浏览器环境：并行加载
+                console.log('[LoadingUI] 🌐 浏览器环境：并行预加载MainMenu资源');
+                await Promise.allSettled(
+                    menuAssets.map(config => this.preloadSpecificAsset('bundle', config.path))
+                );
+                console.log('[LoadingUI] ✅ MainMenu资源预加载完成');
+            }
+            
         } catch (error) {
-            console.error('[LoadingUI] 跳转异常:', error);
-            this._isLoading = false;
-            this.showRetryDialog();
+            console.error('[LoadingUI] MainMenu Bundle资源预加载失败:', error);
+            throw error;
         }
     }
+
+    /**
+     * 预加载指定的Bundle资源
+     */
+    private async preloadSpecificAsset(bundleName: string, assetPath: string): Promise<void> {
+        const assetLoader = this.preloadManager.getAssetLoader();
+        await assetLoader.loadSpriteFrame(bundleName, assetPath);
+    }
+
+    /**
+     * 直接切换场景（容错处理）
+     */
+    private directLoadScene(): void {
+        console.log('[LoadingUI] 🎯 开始直接切换场景...');
+        
+        director.loadScene('MainMenu', (err) => {
+            if (err) {
+                console.error('[LoadingUI] ❌ 场景切换彻底失败，但不重试:', err);
+                // 🔥 取消重试弹窗，避免死循环
+                console.log('[LoadingUI] 🚫 跳过重试，直接进入游戏');
+                // 强制跳转，即使有错误
+                setTimeout(() => {
+                    director.loadScene('MainMenu');
+                }, 1000);
+                return;
+            }
+            console.log('[LoadingUI] ✅ 场景切换成功');
+        });
+    }
+
+    
 
     /**
      * Fix 016: 显示重试弹窗

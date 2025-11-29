@@ -998,7 +998,20 @@ export class StackGameApp extends Component {
      * 返回主菜单
      */
     public backToMenu(): void {
-        director.loadScene('MainMenu');
+        console.log('[StackGameApp] 返回主菜单，开始预加载...');
+
+        // ✅ 先预加载主菜单（MainMenu有11个资源）
+        director.preloadScene('MainMenu', (error) => {
+            if (error) {
+                console.error('[StackGameApp] 主菜单预加载失败:', error);
+                // 降级：即使预加载失败也尝试切换
+                director.loadScene('MainMenu');
+                return;
+            }
+
+            console.log('[StackGameApp] ✅ 主菜单预加载完成，开始切换');
+            director.loadScene('MainMenu');
+        });
     }
 
     /**
@@ -1048,14 +1061,14 @@ export class StackGameApp extends Component {
             const assetLoader = AssetLoader.getInstance();
 
             // 检查资源是否已完全加载并缓存
-            const isCached = assetLoader.isAssetCached('bg', 'game_scene_bg/spriteFrame');
+            const isCached = assetLoader.isAssetCached('bundle', 'bg/game_scene_bg/spriteFrame');
 
             if (!isCached) {
                 console.warn('[StackGameApp] 场景背景图未预加载，开始动态加载');
             }
 
             // 使用AssetLoader从缓存获取（已完全加载，立即可用）
-            const spriteFrame = await assetLoader.loadSpriteFrame('bg', 'game_scene_bg/spriteFrame');
+            const spriteFrame = await assetLoader.loadSpriteFrame('bundle', 'bg/game_scene_bg/spriteFrame');
 
             if (this.backgroundSprite) {
                 this.backgroundSprite.spriteFrame = spriteFrame;
@@ -1161,7 +1174,21 @@ export class StackGameApp extends Component {
     private forceExitToMenu(): void {
         this.gameState = GameState.ENDED;
         this.validationManager.clearPendingValidation();
-        director.loadScene('MainMenu');
+
+        console.log('[StackGameApp] 强制退出，开始预加载主菜单...');
+
+        // ✅ 先预加载主菜单
+        director.preloadScene('MainMenu', (error) => {
+            if (error) {
+                console.error('[StackGameApp] 主菜单预加载失败:', error);
+                // 降级：强制退出时即使预加载失败也要跳转
+                director.loadScene('MainMenu');
+                return;
+            }
+
+            console.log('[StackGameApp] ✅ 主菜单预加载完成，开始切换');
+            director.loadScene('MainMenu');
+        });
     }
 
     /**

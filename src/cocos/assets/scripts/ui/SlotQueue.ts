@@ -727,14 +727,14 @@ export class SlotQueue extends Component {
             const assetLoader = AssetLoader.getInstance();
 
             // 检查资源是否已完全加载并缓存
-            const isCached = assetLoader.isAssetCached('slot', 'slot_item/spriteFrame');
+            const isCached = assetLoader.isAssetCached('bundle', 'slot/slot_item/spriteFrame');
 
             if (isCached) {
             } else {
             }
 
-            // 使用AssetLoader从缓存获取（已完全加载，立即可用）
-            this.slotBackgroundFrame = await assetLoader.loadSpriteFrame('slot', 'slot_item/spriteFrame');
+            // 使用AssetLoader从缓存获取（已完全加载，立可用用）
+            this.slotBackgroundFrame = await assetLoader.loadSpriteFrame('bundle', 'slot/slot_item/spriteFrame');
 
         } catch (error) {
             console.error('[SlotQueue] 加载牌槽背景图失败:', error);

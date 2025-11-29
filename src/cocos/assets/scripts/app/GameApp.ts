@@ -168,7 +168,24 @@ export class GameApp extends Component {
 
     private exitToMenu(): void {
         this.stopGameLoop();
-        director.loadScene('MainMenu');
+        this.backToMenu();
+    }
+
+    public backToMenu(): void {
+        console.log('[GameApp] 返回主菜单，开始预加载...');
+
+        // ✅ 先预加载主菜单（MainMenu有11个资源）
+        director.preloadScene('MainMenu', (error) => {
+            if (error) {
+                console.error('[GameApp] 主菜单预加载失败:', error);
+                // 降级：即使预加载失败也尝试切换
+                director.loadScene('MainMenu');
+                return;
+            }
+
+            console.log('[GameApp] ✅ 主菜单预加载完成，开始切换');
+            director.loadScene('MainMenu');
+        });
     }
 
     private stopGameLoop(): void {
@@ -330,8 +347,27 @@ export class GameApp extends Component {
         
         // 保存本局生词本（GlossService内部已处理）
         
-        // 跳转到结果页面
-        director.loadScene('Result');
+        console.log('[GameApp] 游戏结束，开始预加载结果页...');
+
+        // ✅ 先预加载结果页（Result有24个资源）
+        director.preloadScene('Result', (error) => {
+            if (error) {
+                console.error('[GameApp] 结果页预加载失败:', error);
+                // 降级：即使预加载失败也尝试切换
+                director.loadScene('Result');
+                return;
+            }
+
+            console.log('[GameApp] ✅ 结果页预加载完成，开始切换');
+
+            director.loadScene('Result', (err: any) => {
+                if (err) {
+                    console.error('[GameApp] 跳转结果页失败:', err);
+                } else {
+                    console.log('[GameApp] ✅ 成功进入结果页');
+                }
+            });
+        });
     }
 
     private scheduleFunction(callback: () => void, delay: number): void {
@@ -353,7 +389,7 @@ export class GameApp extends Component {
             // 并行加载所有远程Bundle
             await Promise.all([
                 // 加载游戏背景Bundle - 必须指定到spriteFrame子资源
-                this.loadRemoteBundle('bg', 'game_scene_bg/spriteFrame', this.backgroundSprite),
+                this.loadRemoteBundle('bundle', 'bg/game_scene_bg/spriteFrame', this.backgroundSprite),
                 // 预加载词库Bundle（不需要立即使用，所以预加载即可）
                 this.preloadWordsBundle()
             ]);
@@ -368,24 +404,38 @@ export class GameApp extends Component {
      */
     private preloadWordsBundle(): Promise<void> {
         return new Promise((resolve, reject) => {
-            assetManager.loadBundle('words', (err, bundle) => {
+            // 检查Bundle是否已经加载，避免重复加载
+            let bundle = assetManager.getBundle('bundle');
+            if (bundle) {
+                console.log('[GameApp] Bundle已缓存，直接加载词库');
+                this.loadWordsFromBundle(bundle, resolve, reject);
+                return;
+            }
+
+            assetManager.loadBundle('bundle', (err, bundle) => {
                 if (err) {
-                    console.error('[GameApp] words Bundle加载失败:', err);
+                    console.error('[GameApp] Bundle加载失败:', err);
                     reject(err);
                     return;
                 }
-
-                // 预加载词库文件
-                const assetsToLoad = ['words_core', 'zh_gloss'];
-                bundle.load(assetsToLoad, JsonAsset, (err, assets) => {
-                    if (err) {
-                        console.error('[GameApp] 词库资源预加载失败:', err);
-                        reject(err);
-                        return;
-                    }
-                    resolve();
-                });
+                this.loadWordsFromBundle(bundle, resolve, reject);
             });
+        });
+    }
+
+    /**
+     * 从已加载的Bundle加载词库
+     */
+    private loadWordsFromBundle(bundle: assetManager.Bundle, resolve: () => void, reject: (err: any) => void): void {
+        // 预加载词库文件
+        const assetsToLoad = ['words/words_core', 'words/zh_gloss'];
+        bundle.load(assetsToLoad, JsonAsset, (err, assets) => {
+            if (err) {
+                console.error('[GameApp] 词库资源预加载失败:', err);
+                reject(err);
+                return;
+            }
+            resolve();
         });
     }
 
@@ -394,26 +444,40 @@ export class GameApp extends Component {
      */
     private loadRemoteBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
         return new Promise((resolve, reject) => {
+            // 检查Bundle是否已经加载，避免重复加载
+            let bundle = assetManager.getBundle(bundleName);
+            if (bundle) {
+                console.log(`[GameApp] Bundle '${bundleName}' 已缓存，直接加载资源`);
+                this.loadSpriteFromBundle(bundle, assetPath, sprite, resolve, reject);
+                return;
+            }
+
             assetManager.loadBundle(bundleName, (err, bundle) => {
                 if (err) {
                     console.error(`[GameApp] Bundle '${bundleName}' 加载失败:`, err);
                     reject(err);
                     return;
                 }
-
-                bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
-                    if (err) {
-                        console.error(`[GameApp] SpriteFrame '${assetPath}' 加载失败:`, err);
-                        reject(err);
-                        return;
-                    }
-
-                    if (sprite) {
-                        sprite.spriteFrame = spriteFrame;
-                    }
-                    resolve();
-                });
+                this.loadSpriteFromBundle(bundle, assetPath, sprite, resolve, reject);
             });
+        });
+    }
+
+    /**
+     * 从已加载的Bundle加载SpriteFrame
+     */
+    private loadSpriteFromBundle(bundle: assetManager.Bundle, assetPath: string, sprite: Sprite | null, resolve: () => void, reject: (err: any) => void): void {
+        bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+            if (err) {
+                console.error(`[GameApp] SpriteFrame '${assetPath}' 加载失败:`, err);
+                reject(err);
+                return;
+            }
+
+            if (sprite) {
+                sprite.spriteFrame = spriteFrame;
+            }
+            resolve();
         });
     }
 

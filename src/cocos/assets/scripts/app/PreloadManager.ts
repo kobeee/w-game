@@ -15,60 +15,37 @@ export class PreloadManager {
 
     private static _instance: PreloadManager = null;
 
-    // 需要预加载的Bundle配置（按优先级分组）
-    private readonly BUNDLES_TO_PRELOAD = [
-        // 🔥 高优先级：启动必需资源（加载场景必须完成）
-        { name: 'bg', priority: 1, phase: 'startup' },
-        { name: 'title', priority: 1, phase: 'startup' },
-        { name: 'tiles', priority: 1, phase: 'startup' },        // 字母瓦片资源，高优先级
-        { name: 'slot', priority: 1, phase: 'startup' },         // 牌槽背景资源，高优先级（StackGame依赖）
-        { name: 'words', priority: 1, phase: 'startup' },        // 词库资源，高优先级（核心功能依赖）
-        
-        // 🚀 中优先级：主菜单后台静默加载
-        { name: 'modal', priority: 2, phase: 'menu' }
+    // 🎯 单Bundle配置：所有资源都在一个bundle中
+    private readonly BUNDLE_NAME = 'bundle';
+    
+    // 启动阶段必须加载的关键资源
+    private readonly STARTUP_ASSETS = [
+        // 背景资源
+        'bg/main_scene_bg/spriteFrame',
+        'bg/game_scene_bg/spriteFrame', 
+        'bg/result_scene_bg/spriteFrame',
+        // 标题资源
+        'title/title/spriteFrame',
+        // 瓦片资源
+        'tiles/tile_correct/spriteFrame',
+        'tiles/tile_disabled/spriteFrame',
+        'tiles/tile_highlight/spriteFrame',
+        'tiles/tile_selectable/spriteFrame',
+        'tiles/tile_wrong/spriteFrame',
+        // 牌槽资源
+        'slot/slot_item/spriteFrame',
+        // 词库资源
+        'words/words_core',
+        'words/zh_gloss',
+        // 弹窗资源
+        'modal/pop_card/spriteFrame'
     ];
     
-    // 每个Bundle内需要预加载的关键资源（按阶段分离）
-    private readonly ASSETS_TO_PRELOAD = {
-        // 🏁 启动阶段：必须加载的资源
-        'bg': [
-            'main_scene_bg/spriteFrame',
-            'game_scene_bg/spriteFrame',
-            'result_scene_bg/spriteFrame'
-        ],
-        'title': [
-            'title/spriteFrame'
-        ],
-        'tiles': [
-            'tile_correct/spriteFrame',
-            'tile_disabled/spriteFrame',
-            'tile_highlight/spriteFrame',
-            'tile_selectable/spriteFrame',
-            'tile_wrong/spriteFrame'
-        ],
-        'slot': [
-            'slot_item/spriteFrame'    // 牌槽背景图
-        ],
-        'words': [
-            'words_core',          // 核心词库（3-7字母）- 启动必需
-            'zh_gloss'             // 核心词义库 - 启动必需
-            // 'words_extended',    // 扩展词库（8-10字母）- 延迟到主菜单
-            // 'zh_gloss_extended'  // 扩展词义库 - 延迟到主菜单
-        ],
-        
-        // 📱 主菜单阶段：后台静默加载
-        'modal': [
-            'pop_card/spriteFrame'
-        ]
-    };
-    
-    // 延迟加载资源配置（主菜单阶段加载）
-    private readonly DELAYED_ASSETS = {
-        'words': [
-            'words_extended',      // 扩展词库（8-10字母）
-            'zh_gloss_extended'    // 扩展词义库
-        ]
-    };
+    // 延迟加载资源（主菜单阶段）
+    private readonly DELAYED_ASSETS = [
+        'words/words_extended',
+        'words/zh_gloss_extended'
+    ];
     
     private loadedBundles: Map<string, assetManager.Bundle> = new Map();
     private preloadProgress: Map<string, number> = new Map();
@@ -87,12 +64,20 @@ export class PreloadManager {
     public setProgressCallback(callback: (progress: number, message: string) => void): void {
         this.onProgressCallback = callback;
     }
+
+    /**
+     * 获取AssetLoader实例
+     */
+    public getAssetLoader(): AssetLoader {
+        return AssetLoader.getInstance();
+    }
     
     /**
-     * 🚀 优化版：按阶段优先级加载资源
+     * 🚀 优化版：加载单个Bundle中的关键资源
      * 启动阶段仅加载必需资源，大幅缩短首次加载时间
      */
     public async preloadStartupBundles(): Promise<void> {
+        console.log('[PreloadManager] 🚀 开始启动阶段资源加载（单Bundle版）...');
         this.reportProgress(0, '正在初始化核心资源加载...');
 
         // 检测微信小游戏网络状态
@@ -100,12 +85,14 @@ export class PreloadManager {
             this.checkWeChatNetworkStatus();
         }
 
-        // 🔥 启动阶段：仅加载高优先级必需资源（分配 0 → 0.75 进度）
-        const startupBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.phase === 'startup');
-        await this.preloadBundleGroup(startupBundles, 0, 0.75);
+        // 🔥 加载单个Bundle（分配 0 → 0.3 进度）
+        await this.loadSingleBundle(this.BUNDLE_NAME, 0, 0.3);
 
-        // 📚 核心词库加载（分配独立进度 0.75 → 0.95）
-        await this.loadGlossDataWithProgress(0.75, 0.95, false); // 仅加载核心词库
+        // 🎯 预热关键资源（分配 0.3 → 0.8 进度）
+        await this.preloadCriticalAssets(0.3, 0.8);
+
+        // 📚 核心词库加载（分配 0.8 → 0.95 进度）
+        await this.loadGlossDataWithProgress(0.8, 0.95, false); // 仅加载核心词库
 
         this.reportProgress(0.95, '核心资源加载完成，准备进入游戏');
     }
@@ -155,23 +142,19 @@ export class PreloadManager {
     }
 
     /**
-     * 📱 主菜单阶段：后台静默加载中优先级资源
+     * 📱 主菜单阶段：后台静默加载延迟资源
      */
     public async preloadMenuResources(): Promise<void> {
-        console.log('[PreloadManager] 📱 开始后台加载主菜单资源...');
+        console.log('[PreloadManager] 📱 开始后台加载延迟资源...');
 
         try {
-            // 🚀 中优先级Bundle加载
-            const menuBundles = this.BUNDLES_TO_PRELOAD.filter(b => b.phase === 'menu');
-            await this.preloadBundleGroup(menuBundles, 0, 0.5);
-
             // 📚 扩展词库加载
-            await this.loadDelayedGlossData(0.5, 1.0);
+            await this.loadDelayedGlossData(0, 1.0);
 
-            console.log('[PreloadManager] ✅ 主菜单资源加载完成');
+            console.log('[PreloadManager] ✅ 延迟资源加载完成');
 
         } catch (error) {
-            console.warn('[PreloadManager] 主菜单资源加载失败，将使用按需加载:', error);
+            console.warn('[PreloadManager] 延迟资源加载失败，将使用按需加载:', error);
         }
     }
 
@@ -253,18 +236,34 @@ export class PreloadManager {
         this.reportProgress(startProgress, '正在加载扩展词库...');
 
         try {
-            const wordsBundle = this.getLoadedBundle('words');
-            if (!wordsBundle) {
-                console.warn('[PreloadManager] words Bundle 未加载，跳过扩展词库');
+            const bundle = this.getLoadedBundle(this.BUNDLE_NAME);
+            if (!bundle) {
+                console.warn(`[PreloadManager] Bundle '${this.BUNDLE_NAME}' 未加载，跳过扩展词库`);
                 return;
             }
 
-            const glossService = GlossService.getInstance();
+            // 预热扩展资源
+            const progressPerAsset = (endProgress - startProgress) / this.DELAYED_ASSETS.length;
             
-            // 加载扩展词库
-            const midProgress = startProgress + (endProgress - startProgress) * 0.5;
-            this.reportProgress(midProgress, '正在加载扩展词库数据...');
+            for (let i = 0; i < this.DELAYED_ASSETS.length; i++) {
+                const assetPath = this.DELAYED_ASSETS[i];
+                const assetProgress = startProgress + i * progressPerAsset;
+                
+                // 检查资源路径有效性
+                if (!assetPath || typeof assetPath !== 'string') {
+                    console.warn(`[PreloadManager] ⚠️ 跳过无效的扩展资源路径: ${assetPath}`);
+                    continue;
+                }
+                
+                try {
+                    await this.preloadAsset(bundle, this.BUNDLE_NAME, assetPath);
+                    this.reportProgress(assetProgress + progressPerAsset, `扩展资源预热完成: ${assetPath}`);
+                } catch (error) {
+                    console.warn(`[PreloadManager] 扩展资源预热失败: ${assetPath}`, error);
+                }
+            }
 
+            const glossService = GlossService.getInstance();
             await glossService.loadExtendedWordsOnly();
 
             this.reportProgress(endProgress, '扩展词库加载完成');
@@ -355,10 +354,10 @@ export class PreloadManager {
     private async loadGlossData(useExtended: boolean = false): Promise<void> {
         try {
             // 检查 Bundle 是否已加载
-            const wordsBundle = assetManager.getBundle('words');
-            if (!wordsBundle) {
-                console.error('[PreloadManager] ❌ 严重错误：words Bundle 未加载！');
-                console.error('[PreloadManager] preloadStartupBundles() 应该已加载 words Bundle');
+            const bundle = assetManager.getBundle('bundle');
+            if (!bundle) {
+                console.error(`[PreloadManager] ❌ 严重错误：Bundle '${this.BUNDLE_NAME}' 未加载！`);
+                console.error('[PreloadManager] preloadStartupBundles() 应该已加载 Bundle');
                 return;
             }
 
@@ -395,10 +394,10 @@ export class PreloadManager {
 
         try {
             // 检查 Bundle 是否已加载
-            const wordsBundle = assetManager.getBundle('words');
-            if (!wordsBundle) {
-                console.error('[PreloadManager] ❌ 严重错误：words Bundle 未加载！');
-                console.error('[PreloadManager] preloadStartupBundles() 应该已加载 words Bundle');
+            const bundle = assetManager.getBundle('bundle');
+            if (!bundle) {
+                console.error(`[PreloadManager] ❌ 严重错误：Bundle '${this.BUNDLE_NAME}' 未加载！`);
+                console.error('[PreloadManager] preloadStartupBundles() 应该已加载 Bundle');
                 return;
             }
 
@@ -501,6 +500,91 @@ export class PreloadManager {
     /**
      * 预加载单个Bundle及其关键资源（简化版，底层拦截器处理429重试）
      */
+    /**
+     * 🎯 加载单个Bundle（适配新的单Bundle结构）
+     */
+    private async loadSingleBundle(bundleName: string, startProgress: number, endProgress: number): Promise<void> {
+        this.reportProgress(startProgress, `正在加载 ${bundleName} 资源包...`);
+
+        return new Promise<void>((resolve, reject) => {
+            assetManager.loadBundle(bundleName, (err: any, bundle: any) => {
+                if (err) {
+                    console.error(`[PreloadManager.loadSingleBundle] ❌ Bundle '${bundleName}' 加载失败:`, err);
+                    this.reportProgress(endProgress, `${bundleName} 资源包加载失败，将使用本地资源`);
+                    resolve(); // 不阻断流程
+                    return;
+                }
+
+                this.loadedBundles.set(bundleName, bundle);
+                console.log(`[PreloadManager.loadSingleBundle] ✅ Bundle '${bundleName}' 加载完成`);
+                this.reportProgress(endProgress, `${bundleName} 资源包加载完成`);
+                resolve();
+            });
+        });
+    }
+
+    /**
+     * 🎯 预热关键资源（适配新的单Bundle结构）
+     */
+    private async preloadCriticalAssets(startProgress: number, endProgress: number): Promise<void> {
+        this.reportProgress(startProgress, '正在预热关键资源...');
+        
+        const bundle = this.getLoadedBundle(this.BUNDLE_NAME);
+        if (!bundle) {
+            console.error(`[PreloadManager.preloadCriticalAssets] ❌ Bundle '${this.BUNDLE_NAME}' 未加载`);
+            return;
+        }
+
+        const progressPerAsset = (endProgress - startProgress) / this.STARTUP_ASSETS.length;
+        
+        // 微信环境：串行加载避免429
+        if (typeof wx !== 'undefined') {
+            console.log('[PreloadManager] 📱 微信环境：串行预热资源');
+            for (let i = 0; i < this.STARTUP_ASSETS.length; i++) {
+                const assetPath = this.STARTUP_ASSETS[i];
+                const assetProgress = startProgress + i * progressPerAsset;
+                
+                // 检查资源路径有效性
+                if (!assetPath || typeof assetPath !== 'string') {
+                    console.warn(`[PreloadManager] ⚠️ 跳过无效的关键资源路径: ${assetPath}`);
+                    continue;
+                }
+                
+                try {
+                    await this.preloadAsset(bundle, this.BUNDLE_NAME, assetPath);
+                    this.reportProgress(assetProgress + progressPerAsset, `资源预热完成: ${assetPath}`);
+                } catch (error) {
+                    console.warn(`[PreloadManager] 资源预热失败: ${assetPath}`, error);
+                }
+            }
+        } else {
+            // 浏览器环境：并行加载
+            console.log('[PreloadManager] 🌐 浏览器环境：并行预热资源');
+            const assetPromises = this.STARTUP_ASSETS.map(async (assetPath, i) => {
+                const assetProgress = startProgress + i * progressPerAsset;
+                
+                // 检查资源路径有效性
+                if (!assetPath || typeof assetPath !== 'string') {
+                    console.warn(`[PreloadManager] ⚠️ 跳过无效的关键资源路径: ${assetPath}`);
+                    return;
+                }
+                
+                try {
+                    await this.preloadAsset(bundle, this.BUNDLE_NAME, assetPath);
+                    this.reportProgress(assetProgress + progressPerAsset, `资源预热完成: ${assetPath}`);
+                } catch (error) {
+                    console.warn(`[PreloadManager] 资源预热失败: ${assetPath}`, error);
+                }
+            });
+            
+            await Promise.all(assetPromises);
+        }
+        
+        this.reportProgress(endProgress, '关键资源预热完成');
+    }
+
+    
+
     private async preloadSingleBundle(bundleName: string, startProgress: number, endProgress: number): Promise<void> {
         const attemptMsg = '';
         this.reportProgress(startProgress, `正在加载 ${bundleName} 资源包${attemptMsg}...`);
@@ -545,7 +629,8 @@ export class PreloadManager {
      * 🎯 底层拦截器自动控制并发，简化逻辑
      */
     private async preloadBundleAssets(bundle: assetManager.Bundle, bundleName: string, startProgress: number, endProgress: number): Promise<void> {
-        const assetsToLoad = this.ASSETS_TO_PRELOAD[bundleName] || [];
+        // 使用 STARTUP_ASSETS 作为关键资源列表
+        const assetsToLoad = this.STARTUP_ASSETS;
         if (assetsToLoad.length === 0) {
             this.reportProgress(endProgress, `${bundleName} 资源包完全加载完成`);
             return;
@@ -557,6 +642,13 @@ export class PreloadManager {
         console.log(`[PreloadManager] 🚀 ${bundleName} 资源使用并发加载（底层拦截器控制并发）`);
         const assetPromises = assetsToLoad.map(async (assetPath, i) => {
             const assetProgress = startProgress + i * progressPerAsset;
+            
+            // 检查资源路径有效性
+            if (!assetPath || typeof assetPath !== 'string') {
+                console.warn(`[PreloadManager] ⚠️ 跳过无效的资源路径: ${bundleName}:${assetPath}`);
+                return;
+            }
+            
             try {
                 await this.preloadAsset(bundle, bundleName, assetPath);
                 this.reportProgress(assetProgress + progressPerAsset, `${bundleName}/${assetPath} 完全加载完成`);
@@ -572,6 +664,12 @@ export class PreloadManager {
      * 完全加载单个资源（Fix 3: 增加容错机制，失败不阻断流程）
      */
     private preloadAsset(bundle: assetManager.Bundle, bundleName: string, assetPath: string): Promise<void> {
+        // 检查 assetPath 是否有效
+        if (!assetPath || typeof assetPath !== 'string') {
+            console.warn(`[PreloadManager] ⚠️ 无效的资源路径: ${bundleName}:${assetPath}`);
+            return Promise.reject(new Error(`无效的资源路径: ${bundleName}:${assetPath}`));
+        }
+
         // 判断资源类型（SpriteFrame或JsonAsset）
         const assetType = assetPath.includes('/spriteFrame') ? SpriteFrame : JsonAsset;
 
@@ -607,10 +705,16 @@ export class PreloadManager {
             return;
         }
 
-        const assetsToLoad = this.ASSETS_TO_PRELOAD[bundleName] || [];
-        const promises = assetsToLoad.map(assetPath => 
-            this.preloadAsset(bundle, bundleName, assetPath)
-        );
+        // 使用 STARTUP_ASSETS 作为关键资源列表
+        const assetsToLoad = this.STARTUP_ASSETS;
+        const promises = assetsToLoad.map(assetPath => {
+            // 检查资源路径有效性
+            if (!assetPath || typeof assetPath !== 'string') {
+                console.warn(`[PreloadManager] ⚠️ 跳过无效的资源路径: ${bundleName}:${assetPath}`);
+                return Promise.resolve();
+            }
+            return this.preloadAsset(bundle, bundleName, assetPath);
+        });
 
         await Promise.all(promises);
     }

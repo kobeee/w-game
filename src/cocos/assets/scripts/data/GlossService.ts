@@ -48,8 +48,8 @@ export class GlossService {
 
         try {
             // 加载扩展词库文件
-            const extendedWords = await this.loadJsonFromBundle('words', 'words_extended');
-            const extendedGloss = await this.loadJsonFromBundle('words', 'zh_gloss_extended');
+            const extendedWords = await this.loadJsonFromBundle('bundle', 'words/words_extended');
+            const extendedGloss = await this.loadJsonFromBundle('bundle', 'words/zh_gloss_extended');
 
             // 合并到现有词库
             if (extendedWords) {
@@ -117,8 +117,8 @@ export class GlossService {
         try {
             // 步骤1：加载核心词库（仅在未加载时）
             if (!this.isCoreLoaded) {
-                const coreWordsAsset = await this.loadJsonFromBundle('words', 'words_core');
-                const coreGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss');
+                const coreWordsAsset = await this.loadJsonFromBundle('bundle', 'words/words_core');
+        const coreGlossAsset = await this.loadJsonFromBundle('bundle', 'words/zh_gloss');
 
                 // ✅ 调试：检查 coreWordsAsset 的完整结构
                 
@@ -158,7 +158,7 @@ export class GlossService {
                 }
 
                 // 额外加载：自定义词义库（幂等合并）
-                const customGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_custom', true);
+                const customGlossAsset = await this.loadJsonFromBundle('bundle', 'words/zh_gloss_custom', true);
                 if (customGlossAsset && (customGlossAsset as any).json) {
                     this.mergeGlossDict((customGlossAsset as any).json);
                 }
@@ -168,8 +168,8 @@ export class GlossService {
 
             // 步骤2：如果需要且未加载，加载扩展词库（8-10字母）
             if (useExtended && !this.isExtendedLoaded) {
-                const extWordsAsset = await this.loadJsonFromBundle('words', 'words_extended');
-                const extGlossAsset = await this.loadJsonFromBundle('words', 'zh_gloss_extended');
+                const extWordsAsset = await this.loadJsonFromBundle('bundle', 'words/words_extended');
+        const extGlossAsset = await this.loadJsonFromBundle('bundle', 'words/zh_gloss_extended');
 
                 if (extWordsAsset && extWordsAsset.json) {
                     // 合并扩展词库到现有词库

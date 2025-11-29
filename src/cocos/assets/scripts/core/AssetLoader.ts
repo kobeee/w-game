@@ -25,33 +25,44 @@ export class AssetLoader {
      * @returns Promise<SpriteFrame>
      */
     public async loadSpriteFrame(bundleName: string, assetPath: string): Promise<SpriteFrame> {
-        try {
-            // 第一步：尝试获取已缓存的Bundle
-            let bundle = assetManager.getBundle(bundleName);
-            
-            if (bundle) {
+        const maxRetries = 3;
+        const retryDelay = 1000; // 1秒重试间隔
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // 第一步：尝试获取已缓存的Bundle
+                let bundle = assetManager.getBundle(bundleName);
                 
-                // 第二步：使用bundle.get()获取已完全加载的资源（立即可用）
-                const cachedAsset = bundle.get(assetPath, SpriteFrame);
-                if (cachedAsset) {
-                    return cachedAsset;
+                if (bundle) {
+                    // 第二步：使用bundle.get()获取已完全加载的资源（立即可用）
+                    const cachedAsset = bundle.get(assetPath, SpriteFrame);
+                    if (cachedAsset) {
+                        return cachedAsset;
+                    }
+                    
+                    // 第三步：如果资源未完全加载，进行完全加载
+                    return await this.loadAssetFromBundle(bundle, assetPath);
                 }
                 
-                // 第三步：如果资源未完全加载，进行完全加载
+                // 第四步：Bundle未缓存，需要动态加载Bundle
+                bundle = await this.loadBundle(bundleName);
+                
+                // 第五步：从新加载的Bundle中完全加载资源
                 return await this.loadAssetFromBundle(bundle, assetPath);
+                
+            } catch (error) {
+                // 只在最后一次尝试时记录错误
+                if (attempt === maxRetries) {
+                    console.error(`[AssetLoader] ❌ 加载SpriteFrame失败: ${bundleName}/${assetPath}`, error);
+                    throw error;
+                }
+                
+                // 等待后重试
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
-            
-            // 第四步：Bundle未缓存，需要动态加载Bundle
-            console.warn(`[AssetLoader] ⚠️ Bundle未缓存，开始动态加载: ${bundleName}`);
-            bundle = await this.loadBundle(bundleName);
-            
-            // 第五步：从新加载的Bundle中完全加载资源
-            return await this.loadAssetFromBundle(bundle, assetPath);
-            
-        } catch (error) {
-            console.error(`[AssetLoader] ❌ 加载SpriteFrame失败: ${bundleName}/${assetPath}`, error);
-            throw error;
         }
+        
+        throw new Error(`[AssetLoader] 加载失败: ${bundleName}/${assetPath}`);
     }
     
     /**

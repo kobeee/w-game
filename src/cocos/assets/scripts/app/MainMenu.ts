@@ -271,22 +271,28 @@ export class MainMenu extends Component {
     }
 
     private onStartGame(): void {
-        
-        // 保存当前设置
         this.saveSettings();
-        
-        // 获取当前选中模式的场景名称
         const config = GAME_MODE_CONFIGS[this.selectedGameMode];
         const sceneName = config.sceneName;
-        
-        
-        // 跳转到游戏场景
-        director.loadScene(sceneName, (error: any) => {
+
+        console.log(`[MainMenu] 开始预加载游戏场景: ${sceneName}`);
+
+        // ✅ 先预加载游戏场景（Game有16个资源，StackGameScene有29个资源）
+        director.preloadScene(sceneName, (error) => {
             if (error) {
-                console.error(`[MainMenu] 跳转场景失败: ${sceneName}`, error);
-            } else {
-                
+                console.error(`[MainMenu] 场景预加载失败: ${sceneName}`, error);
+                return;
             }
+
+            console.log(`[MainMenu] ✅ ${sceneName}场景预加载完成，开始切换`);
+
+            director.loadScene(sceneName, (err: any) => {
+                if (err) {
+                    console.error(`[MainMenu] 跳转场景失败: ${sceneName}`, err);
+                } else {
+                    console.log(`[MainMenu] ✅ 成功进入${sceneName}`);
+                }
+            });
         });
     }
 
@@ -336,14 +342,24 @@ export class MainMenu extends Component {
      * 查看历史生词本
      */
     viewHistory(): void {
-        
-        // 跳转到结果页面查看历史
-        director.loadScene('Result', (error: any) => {
+        console.log('[MainMenu] 开始预加载结果页面...');
+
+        // ✅ 先预加载结果页（Result有24个资源）
+        director.preloadScene('Result', (error) => {
             if (error) {
-                console.error('[MainMenu] 跳转历史页面失败:', error);
-            } else {
-                
+                console.error('[MainMenu] 结果页预加载失败:', error);
+                return;
             }
+
+            console.log('[MainMenu] ✅ 结果页预加载完成，开始切换');
+
+            director.loadScene('Result', (err: any) => {
+                if (err) {
+                    console.error('[MainMenu] 跳转历史页面失败:', err);
+                } else {
+                    console.log('[MainMenu] ✅ 成功进入历史页面');
+                }
+            });
         });
     }
 
@@ -439,18 +455,18 @@ export class MainMenu extends Component {
                 console.log('[MainMenu] 📱 微信小游戏环境：使用串行加载避免429');
                 
                 // 串行加载，避免并发限制
-                await this.loadSpriteFromBundle('bg', 'main_scene_bg/spriteFrame', this.backgroundSprite);
+                await this.loadSpriteFromBundle('bundle', 'bg/main_scene_bg/spriteFrame', this.backgroundSprite);
                 // 添加延迟，避免触发429
                 await new Promise(resolve => setTimeout(resolve, 100));
-                await this.loadSpriteFromBundle('title', 'title/spriteFrame', this.titleSprite);
+                await this.loadSpriteFromBundle('bundle', 'title/title/spriteFrame', this.titleSprite);
             } else {
                 // 浏览器环境：并行加载
                 console.log('[MainMenu] 🌐 浏览器环境：使用并行加载');
                 await Promise.all([
                     // 加载背景资源 - 自动利用预加载缓存
-                    this.loadSpriteFromBundle('bg', 'main_scene_bg/spriteFrame', this.backgroundSprite),
+                    this.loadSpriteFromBundle('bundle', 'bg/main_scene_bg/spriteFrame', this.backgroundSprite),
                     // 加载标题资源 - 自动利用预加载缓存
-                    this.loadSpriteFromBundle('title', 'title/spriteFrame', this.titleSprite)
+                    this.loadSpriteFromBundle('bundle', 'title/title/spriteFrame', this.titleSprite)
                 ]);
             }
             
@@ -470,6 +486,25 @@ export class MainMenu extends Component {
             // 检查缓存状态
             const bundleCached = assetLoader.isBundleCached(bundleName);
             const assetCached = assetLoader.isAssetCached(bundleName, assetPath);
+            
+            console.log(`[MainMenu] 资源缓存检查: ${bundleName}/${assetPath}, Bundle缓存: ${bundleCached}, 资源缓存: ${assetCached}`);
+            
+            // ✅ 如果资源已缓存，直接获取，无需网络请求
+            if (assetCached) {
+                console.log(`[MainMenu] ✅ 资源已缓存，直接获取: ${bundleName}/${assetPath}`);
+                const spriteFrame = await assetLoader.loadSpriteFrame(bundleName, assetPath);
+                if (sprite) {
+                    sprite.spriteFrame = spriteFrame;
+                }
+                return;
+            }
+            
+            // 🎯 微信小游戏环境下：如果资源未缓存，延迟加载避免429
+            if (typeof wx !== 'undefined') {
+                console.log(`[MainMenu] 📱 资源未缓存，延迟加载避免429: ${bundleName}/${assetPath}`);
+                // 添加额外延迟，避免与Loading阶段的预加载冲突
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
             
             // 使用统一加载器加载资源
             const spriteFrame = await assetLoader.loadSpriteFrame(bundleName, assetPath);

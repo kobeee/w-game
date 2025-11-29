@@ -30,6 +30,40 @@ export class TimezoneSync {
         // 使用本地时间戳
         return Date.now();
     }
+
+    /**
+     * 将字符串转换为 UTF-8 字节数组（微信小游戏兼容版本）
+     * @param str 输入字符串
+     */
+    private static stringToUtf8Bytes(str: string): Uint8Array {
+        const bytes: number[] = [];
+        
+        for (let i = 0; i < str.length; i++) {
+            const charCode = str.charCodeAt(i);
+            
+            if (charCode < 0x80) {
+                // ASCII 字符（0-127）
+                bytes.push(charCode);
+            } else if (charCode < 0x800) {
+                // 2字节字符
+                bytes.push(0xc0 | (charCode >> 6));
+                bytes.push(0x80 | (charCode & 0x3f));
+            } else if (charCode < 0x10000) {
+                // 3字节字符
+                bytes.push(0xe0 | (charCode >> 12));
+                bytes.push(0x80 | ((charCode >> 6) & 0x3f));
+                bytes.push(0x80 | (charCode & 0x3f));
+            } else {
+                // 4字节字符（UTF-16 代理对）
+                bytes.push(0xf0 | (charCode >> 18));
+                bytes.push(0x80 | ((charCode >> 12) & 0x3f));
+                bytes.push(0x80 | ((charCode >> 6) & 0x3f));
+                bytes.push(0x80 | (charCode & 0x3f));
+            }
+        }
+        
+        return new Uint8Array(bytes);
+    }
     
     /**
      * 获取本地时间（转换为Asia/Shanghai时区）
@@ -66,9 +100,8 @@ export class TimezoneSync {
      */
     private static async generateSignatureWebCrypto(payload: string, secretKey: string, timestamp: number): Promise<{signature: string, timestamp: number}> {
         try {
-            const encoder = new TextEncoder();
-            const keyData = encoder.encode(secretKey);
-            const messageData = encoder.encode(payload);
+            const keyData = this.stringToUtf8Bytes(secretKey);
+            const messageData = this.stringToUtf8Bytes(payload);
             
             const key = await crypto.subtle.importKey(
                 'raw',

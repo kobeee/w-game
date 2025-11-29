@@ -71,39 +71,56 @@ export class LocalDictionary {
      */
     private loadCoreDict(): Promise<void> {
         return new Promise((resolve) => {
-            assetManager.loadBundle('words', (err, bundle) => {
+            // 检查Bundle是否已经加载，避免重复加载
+            let bundle = assetManager.getBundle('bundle');
+            if (bundle) {
+                console.log('[LocalDictionary] Bundle已缓存，直接使用');
+                this.loadCoreDictFromBundle(bundle, resolve);
+                return;
+            }
+
+            assetManager.loadBundle('bundle', (err, bundle) => {
                 if (err) {
-                    console.warn('[LocalDictionary] 词库Bundle加载失败');
+                    console.warn('[LocalDictionary] Bundle加载失败');
                     resolve();
                     return;
                 }
+                this.loadCoreDictFromBundle(bundle, resolve);
+            });
+        });
+    }
 
-                const mergeJson = (asset?: JsonAsset | null) => {
-                    if (asset && asset.json) {
-                        for (const [word, definition] of Object.entries(asset.json)) {
-                            if (typeof definition === 'string') {
-                                this.coreDict.set(String(word).toUpperCase(), definition);
-                            }
-                        }
+    /**
+     * 从已加载的Bundle加载核心词库
+     * @private
+     */
+    private loadCoreDictFromBundle(bundle: assetManager.Bundle, resolve: () => void): void {
+        const mergeJson = (asset?: JsonAsset | null) => {
+            if (asset && asset.json) {
+                for (const [word, definition] of Object.entries(asset.json)) {
+                    if (typeof definition === 'string') {
+                        this.coreDict.set(String(word).toUpperCase(), definition);
                     }
-                };
+                }
+            }
+        };
 
-                // 基础核心
-                bundle.load('zh_gloss', JsonAsset, (loadErr, asset) => {
-                    if (loadErr) {
-                        console.warn('[LocalDictionary] 核心词库释义加载失败');
-                    } else {
-                        mergeJson(asset);
-                    }
+        // 基础核心
+        bundle.load('words/zh_gloss', JsonAsset, (loadErr, asset) => {
+            if (loadErr) {
+                console.warn('[LocalDictionary] 核心词库释义加载失败');
+            } else {
+                mergeJson(asset);
+            }
 
-                    // 可选：custom（项目自定义覆盖/修正）
-                    bundle.load('zh_gloss_custom', JsonAsset, (cusErr, cusAsset) => {
-                        if (!cusErr) {
-                            mergeJson(cusAsset);
-                        }
-                        resolve();
-                    });
-                });
+            // 可选：custom（项目自定义覆盖/修正）
+            bundle.load('words/zh_gloss_custom', JsonAsset, (cusErr, cusAsset) => {
+                if (cusErr) {
+                    console.warn('[LocalDictionary] 自定义词库加载失败');
+                } else {
+                    mergeJson(cusAsset);
+                }
+                resolve();
             });
         });
     }
@@ -114,49 +131,68 @@ export class LocalDictionary {
      */
     private loadExtendedDict(): Promise<void> {
         return new Promise((resolve) => {
-            assetManager.loadBundle('words', (err, bundle) => {
+            // 检查Bundle是否已经加载，避免重复加载
+            let bundle = assetManager.getBundle('bundle');
+            if (bundle) {
+                console.log('[LocalDictionary] Bundle已缓存，直接加载扩展词库');
+                this.loadExtendedDictFromBundle(bundle, resolve);
+                return;
+            }
+
+            assetManager.loadBundle('bundle', (err, bundle) => {
                 if (err) {
-                    console.warn('[LocalDictionary] 词库Bundle加载失败');
+                    console.warn('[LocalDictionary] Bundle加载失败');
                     resolve();
                     return;
                 }
+                this.loadExtendedDictFromBundle(bundle, resolve);
+            });
+        });
+    }
 
-                bundle.load('words_extended', JsonAsset, (wordsErr, wordsAsset) => {
-                    if (wordsErr) {
-                        console.warn('[LocalDictionary] 扩展词库加载失败');
-                        resolve();
-                        return;
-                    }
+    /**
+     * 从已加载的Bundle加载扩展词库
+     * @private
+     */
+    private loadExtendedDictFromBundle(bundle: assetManager.Bundle, resolve: () => void): void {
+        bundle.load('words/words_extended', JsonAsset, (wordsErr, wordsAsset) => {
+            if (wordsErr) {
+                console.warn('[LocalDictionary] 扩展词库加载失败');
+                resolve();
+                return;
+            }
 
-                    if (wordsAsset && wordsAsset.json) {
-                        const jsonData = wordsAsset.json as any;
-                        if (jsonData.by_len) {
-                            for (const len in jsonData.by_len) {
-                                const words = jsonData.by_len[len];
-                                if (Array.isArray(words)) {
-                                    words.forEach((word: string) => {
-                                        this.extendedDict.add(word.toUpperCase());
-                                    });
-                                }
-                            }
+            if (wordsAsset && wordsAsset.json) {
+                const jsonData = wordsAsset.json as any;
+                if (jsonData.by_len) {
+                    for (const len in jsonData.by_len) {
+                        const words = jsonData.by_len[len];
+                        if (Array.isArray(words)) {
+                            words.forEach((word: string) => {
+                                this.extendedDict.add(word.toUpperCase());
+                            });
                         }
                     }
+                }
+            }
 
-                    // 加载扩展词库释义
-                    bundle.load('zh_gloss_extended', JsonAsset, (glossErr, glossAsset) => {
-                        if (!glossErr && glossAsset && glossAsset.json) {
-                            for (const [word, definition] of Object.entries(glossAsset.json)) {
+            // 加载扩展释义
+            bundle.load('words/zh_gloss_extended', JsonAsset, (glossErr, glossAsset) => {
+                if (glossErr) {
+                    console.warn('[LocalDictionary] 扩展释义加载失败');
+                } else {
+                    const mergeJson = (asset?: JsonAsset | null) => {
+                        if (asset && asset.json) {
+                            for (const [word, definition] of Object.entries(asset.json)) {
                                 if (typeof definition === 'string') {
-                                    if (!this.coreDict.has(word.toUpperCase())) {
-                                        this.coreDict.set(word.toUpperCase(), definition);
-                                    }
+                                    this.coreDict.set(String(word).toUpperCase(), definition);
                                 }
                             }
                         }
-
-                        resolve();
-                    });
-                });
+                    };
+                    mergeJson(glossAsset);
+                }
+                resolve();
             });
         });
     }

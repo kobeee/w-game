@@ -89,40 +89,53 @@ export class LetterTile extends Component {
     private async loadTileSprites(): Promise<void> {
         const states: TileState[] = ['selectable', 'highlight', 'correct', 'wrong', 'disabled'];
         const assetLoader = AssetLoader.getInstance();
-        
-        
+        let successCount = 0;
+        let hasNewLoad = false;
         
         for (const state of states) {
             const assetPath = `tile_${state}/spriteFrame`;
             
             try {
                 // 检查资源是否已完全加载并缓存
-                const isCached = assetLoader.isAssetCached('tiles', assetPath);
+                const isCached = assetLoader.isAssetCached('bundle', `tiles/${assetPath}`);
                 
-                if (isCached) {
-                } else {
+                if (!isCached) {
+                    hasNewLoad = true;
                 }
                 
                 // 使用AssetLoader加载远程Bundle资源
-                const spriteFrame = await assetLoader.loadSpriteFrame('tiles', assetPath);
+                const spriteFrame = await assetLoader.loadSpriteFrame('bundle', `tiles/${assetPath}`);
                 
                 if (spriteFrame) {
                     this.spriteFrames[state] = spriteFrame;
+                    successCount++;
                 } else {
-                    console.error(`[LetterTile] ❌ 瓦片加载失败: ${state}`);
+                    console.error(`[LetterTile] ❌ 瓦片加载失败: ${state} (返回null)`);
                 }
             } catch (error) {
                 console.error(`[LetterTile] ❌ 无法加载瓦片资源: ${state}`, error);
+                // 关键修复：不因为单个资源失败就停止整个过程
             }
         }
         
-        this.isLoaded = true;
-        this.updateVisual();
+        // 只有至少有一个资源成功加载才标记为已加载
+        if (successCount > 0) {
+            this.isLoaded = true;
+            // 只在有新加载时输出一次日志
+            if (hasNewLoad) {
+                console.log(`[LetterTile] 🎯 瓦片资源加载完成: ${successCount}/${states.length}`);
+            }
+        } else {
+            console.error('[LetterTile] ❌ 所有瓦片资源加载失败，保持未加载状态');
+            this.isLoaded = false;
+        }
         
+        // 立即更新视觉效果（使用已加载的资源）
+        this.updateVisual();
     }
 
     private updateVisual(): void {
-        if (!this.bgSprite || !this.isLoaded) {
+        if (!this.bgSprite) {
             return;
         }
 
@@ -133,7 +146,12 @@ export class LetterTile extends Component {
             // 重置颜色为白色（正常显示SpriteFrame）
             this.bgSprite.color = new Color(255, 255, 255, 255);
         } else {
-            console.error(`[LetterTile] 缺少状态图片: ${this.currentState}`);
+            // 关键修复：不因为缺少某个状态的图片就报错，使用颜色降级方案
+            // 使用默认颜色作为降级方案
+            const defaultColor = this.defaultColors[this.currentState];
+            if (defaultColor) {
+                this.bgSprite.color = defaultColor;
+            }
         }
 
         // 更新标签颜色 - 在这些瓦片上使用深色文字以确保可见性

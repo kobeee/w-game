@@ -99,7 +99,7 @@ export class GlossSheet extends Component {
         try {
             // 加载modal Bundle中的弹窗背景 - 必须指定到spriteFrame子资源
             if (this.panel) {
-                await this.loadRemoteBundle('modal', 'pop_card/spriteFrame', this.panel.getComponent(Sprite));
+                await this.loadRemoteBundle('bundle', 'modal/pop_card/spriteFrame', this.panel.getComponent(Sprite));
             }
         } catch (error) {
             console.warn('[GlossSheet] 弹窗背景加载失败', error);
@@ -127,28 +127,41 @@ export class GlossSheet extends Component {
      */
     private loadRemoteBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
         return new Promise((resolve, reject) => {
+            // 检查Bundle是否已经加载，避免重复加载
+            let bundle = assetManager.getBundle(bundleName);
+            if (bundle) {
+                console.log(`[GlossSheet] Bundle '${bundleName}' 已缓存，直接加载资源`);
+                this.loadSpriteFromBundle(bundle, assetPath, sprite, resolve, reject);
+                return;
+            }
+
             assetManager.loadBundle(bundleName, (err, bundle) => {
                 if (err) {
                     console.error(`[GlossSheet] Bundle '${bundleName}' 加载失败:`, err);
                     reject(err);
                     return;
                 }
-
-                bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
-                    if (err) {
-                        console.error(`[GlossSheet] SpriteFrame '${assetPath}' 加载失败:`, err);
-                        reject(err);
-                        return;
-                    }
-
-                    if (sprite) {
-                        sprite.spriteFrame = spriteFrame;
-                        sprite.type = Sprite.Type.SLICED; // 弹窗背景使用9-slice
-                        
-                    }
-                    resolve();
-                });
+                this.loadSpriteFromBundle(bundle, assetPath, sprite, resolve, reject);
             });
+        });
+    }
+
+    /**
+     * 从已加载的Bundle加载SpriteFrame
+     */
+    private loadSpriteFromBundle(bundle: assetManager.Bundle, assetPath: string, sprite: Sprite | null, resolve: () => void, reject: (err: any) => void): void {
+        bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+            if (err) {
+                console.error(`[GlossSheet] SpriteFrame '${assetPath}' 加载失败:`, err);
+                reject(err);
+                return;
+            }
+
+            if (sprite) {
+                sprite.spriteFrame = spriteFrame;
+                sprite.type = Sprite.Type.SLICED; // 弹窗背景使用9-slice
+            }
+            resolve();
         });
     }
 

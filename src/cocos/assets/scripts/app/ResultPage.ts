@@ -228,7 +228,7 @@ export class ResultPage extends Component {
     private async loadRemoteAssets(): Promise<void> {
         try {
             // 加载结果页背景Bundle - 必须指定到spriteFrame子资源
-            await this.loadRemoteBundle('bg', 'result_scene_bg/spriteFrame', this.backgroundSprite);
+            await this.loadRemoteBundle('bundle', 'bg/result_scene_bg/spriteFrame', this.backgroundSprite);
         } catch (error) {
             console.error('[ResultPage] 远程资源加载失败:', error);
             // 可以加载本地备用资源或显示占位图
@@ -240,26 +240,37 @@ export class ResultPage extends Component {
      */
     private loadRemoteBundle(bundleName: string, assetPath: string, sprite: Sprite | null): Promise<void> {
         return new Promise((resolve, reject) => {
+            // 检查Bundle是否已经加载，避免重复加载
+            let bundle = assetManager.getBundle(bundleName);
+            if (bundle) {
+                console.log(`[ResultPage] Bundle '${bundleName}' 已缓存，直接加载资源`);
+                this.loadSpriteFromBundle(bundle, assetPath, sprite, resolve, reject);
+                return;
+            }
+
             assetManager.loadBundle(bundleName, (err, bundle) => {
                 if (err) {
                     console.error(`[ResultPage] Bundle '${bundleName}' 加载失败:`, err);
                     reject(err);
                     return;
                 }
-
-                bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
-                    if (err) {
-                        console.error(`[ResultPage] SpriteFrame '${assetPath}' 加载失败:`, err);
-                        reject(err);
-                        return;
-                    }
-
-                    if (sprite) {
-                        sprite.spriteFrame = spriteFrame;
-                    }
-                    resolve();
-                });
+                this.loadSpriteFromBundle(bundle, assetPath, sprite, resolve, reject);
             });
+        });
+    }
+
+    private loadSpriteFromBundle(bundle: assetManager.Bundle, assetPath: string, sprite: Sprite | null, resolve: () => void, reject: (err: any) => void): void {
+        bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
+            if (err) {
+                console.error(`[ResultPage] SpriteFrame '${assetPath}' 加载失败:`, err);
+                reject(err);
+                return;
+            }
+
+            if (sprite) {
+                sprite.spriteFrame = spriteFrame;
+            }
+            resolve();
         });
     }
 
@@ -308,9 +319,19 @@ export class ResultPage extends Component {
     }
 
     private onReturnToMenu(): void {
-        
-        
-        director.loadScene('MainMenu', () => {
+        console.log('[ResultPage] 返回主菜单，开始预加载...');
+
+        // ✅ 先预加载主菜单（MainMenu有11个资源）
+        director.preloadScene('MainMenu', (error) => {
+            if (error) {
+                console.error('[ResultPage] 主菜单预加载失败:', error);
+                // 降级：即使预加载失败也尝试切换
+                director.loadScene('MainMenu');
+                return;
+            }
+
+            console.log('[ResultPage] ✅ 主菜单预加载完成，开始切换');
+            director.loadScene('MainMenu');
         });
     }
 

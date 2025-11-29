@@ -19,7 +19,7 @@
     const MAX_CONCURRENCY = 3;      // 进一步降低并发，稳字当头
     const REQUEST_INTERVAL = 100;   // [新增] 两次请求发出的最小间隔(ms)，防止瞬时 QPS 过高
     const COOL_DOWN_TIME = 2000;    // [新增] 触发 429 后的全局暂停时间(ms)
-    const MAX_RETRIES = 4;          // 最大重试次数
+    const MAX_RETRIES = 0;          // 🔥 取消重试：重试从不成功，浪费时间
     // ===========================================
 
     const _originalRequest = wx.request;
@@ -75,28 +75,16 @@
                 // 2. 立即归还并发计数（因为这个请求实际上失败了，不算占用连接）
                 _runningCount--;
 
-                // 3. 设置指数退避冷却定时器（避免死循环）
-                const backoffTime = COOL_DOWN_TIME * (MAX_RETRIES - retryCount + 1); // 逐次增加冷却时间
-                console.log(`[WXGate] 🧊 指数退避冷却 ${backoffTime}ms`);
+                // 3. 🔥 取消重试：直接失败，不浪费时间
+                console.error(`[WXGate] ❌ 429请求失败，不重试: ${options.url}`);
+                if (options.fail) options.fail({ errMsg: 'request:fail 429 limit exceeded' });
                 
+                // 4. 设置熔断冷却定时器（固定时间，不指数退避）
                 setTimeout(() => {
                     console.log('[WXGate] 🧊 熔断结束，恢复传输');
                     _isPaused = false;
-                    
-                    // 4. 执行重试逻辑（在熔断结束后）
-                    if (retryCount > 0) {
-                        console.warn(`[WXGate] 重新入队 (剩余重试 ${retryCount}): ${options.url}`);
-                        _queue.unshift({
-                            type, options, virtualTask, retryCount: retryCount - 1, _isAborted: false
-                        });
-                    } else {
-                        // 重试耗尽，真的失败了
-                        console.error(`[WXGate] ❌ 重试耗尽，请求失败: ${options.url}`);
-                        if (options.fail) options.fail({ errMsg: 'request:fail 429 limit exceeded' });
-                    }
-                    
                     _scheduler(); // 重新激活调度
-                }, backoffTime);
+                }, COOL_DOWN_TIME);
                 return;
             }
 
@@ -178,6 +166,30 @@
         return virtualTask;
     };
 
+    /**
+     * 🔥 微信小游戏环境base64编码实现
+     */
+    function wxBase64Encode(str) {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+        let result = '';
+        let i = 0;
+        
+        while (i < str.length) {
+            const a = str.charCodeAt(i++);
+            const b = i < str.length ? str.charCodeAt(i++) : 0;
+            const c = i < str.length ? str.charCodeAt(i++) : 0;
+            
+            const bitmap = (a << 16) | (b << 8) | c;
+            
+            result += chars.charAt((bitmap >> 18) & 63);
+            result += chars.charAt((bitmap >> 12) & 63);
+            result += i - 2 < str.length ? chars.charAt((bitmap >> 6) & 63) : '=';
+            result += i - 1 < str.length ? chars.charAt(bitmap & 63) : '=';
+        }
+        
+        return result;
+    }
+
     wx.__network_gate_installed__ = true;
-    console.log(`[WXGate] 016版已激活 | 并发: ${MAX_CONCURRENCY} | 间隔: ${REQUEST_INTERVAL}ms | 熔断: ${COOL_DOWN_TIME}ms`);
+    console.log(`[WXGate] 016版已激活 | 并发: ${MAX_CONCURRENCY} | 间隔: ${REQUEST_INTERVAL}ms | 熔断: ${COOL_DOWN_TIME}ms | 重试: ${MAX_RETRIES} (取消重试)`);
 })();
