@@ -1,5 +1,65 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-11-30 - 🔧 [CRITICAL] tiles资源预加载失效导致429问题修复（方法命名冲突解决）
+
+### 🚨 问题发现
+进入"小试牛刀"或"叠叠乐"场景后，开始加载tiles资源时**必定出现429错误**。5个tiles资源（selectable、highlight、correct、wrong、disabled）加载过程中重试后通常只能成功4个，偶尔3个。
+
+### 🔍 根本原因分析
+**方法命名冲突**：`PreloadManager.ts` 中存在两个同名方法 `preloadCriticalAssets`：
+- L529: `private async preloadCriticalAssets(startProgress: number, endProgress: number)` 
+- L712: `public async preloadCriticalAssets(bundleName: string)`
+
+**JavaScript方法覆盖机制**：TypeScript/JavaScript类中不支持方法重载，后定义的公开方法覆盖了私有方法。
+
+**调用参数错误解析**：L92调用 `await this.preloadCriticalAssets(0.3, 0.8)` 被错误执行为公开方法：
+- 第一个参数 `0.3` 被当作 `bundleName`（转换为字符串 `"0.3"`）
+- 第二个参数 `0.8` 被忽略
+- `getLoadedBundle("0.3")` 返回 `null`，导致关键资源预加载被跳过
+
+### 🛠️ 修复方案
+**重命名私有方法**，解决命名冲突：
+```typescript
+// L529: 修改前
+private async preloadCriticalAssets(startProgress: number, endProgress: number): Promise<void>
+
+// L529: 修改后  
+private async preloadCriticalAssetsWithProgress(startProgress: number, endProgress: number): Promise<void>
+```
+
+同时修改调用处：
+```typescript
+// L92: 修改前
+await this.preloadCriticalAssets(0.3, 0.8);
+
+// L92: 修改后
+await this.preloadCriticalAssetsWithProgress(0.3, 0.8);
+```
+
+### 📊 修复效果
+| 问题 | 修复前 | 修复后 | 改善 |
+|------|--------|--------|------|
+| 方法调用 | 错误执行公开方法 | 正确执行私有方法 | **功能恢复** |
+| 资源预加载 | 13个STARTUP_ASSETS全部跳过 | 13个资源全部预加载 | **完整性恢复** |
+| 429错误 | 必定出现（tiles未预加载） | 彻底消除 | **稳定性提升** |
+| 日志显示 | "Bundle 0.3 未加载" | 正常的预热日志 | **诊断清晰** |
+
+### 📁 修改文件清单
+- `src/cocos/assets/scripts/app/PreloadManager.ts` - 重命名方法解决命名冲突
+
+### ✅ 验证效果
+- **Loading阶段**：13个STARTUP_ASSETS资源全部成功预加载（包括5个tiles）
+- **进入游戏场景**：tiles资源直接从缓存获取，无网络请求
+- **429错误**：彻底消除（针对tiles资源）
+- **日志正常**：显示 `[PreloadManager] 📱 微信环境：串行预热资源` 等正常日志
+
+### 💡 经验总结
+1. **避免同名方法**：TypeScript类中不要定义同名方法，即使参数签名不同
+2. **日志诊断价值**：异常日志 `Bundle 0.3 未加载` 是定位问题的关键线索
+3. **方法重载陷阱**：TypeScript的方法重载只是编译时检查，运行时JavaScript不支持真正的方法重载
+
+---
+
 ## 2025-11-29 - 🔧 [CRITICAL] 429错误日志风暴与导入问题修复
 
 ### 🚨 问题发现

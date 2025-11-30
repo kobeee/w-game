@@ -89,7 +89,7 @@ export class PreloadManager {
         await this.loadSingleBundle(this.BUNDLE_NAME, 0, 0.3);
 
         // 🎯 预热关键资源（分配 0.3 → 0.8 进度）
-        await this.preloadCriticalAssets(0.3, 0.8);
+        await this.preloadCriticalAssetsWithProgress(0.3, 0.8);
 
         // 📚 核心词库加载（分配 0.8 → 0.95 进度）
         await this.loadGlossDataWithProgress(0.8, 0.95, false); // 仅加载核心词库
@@ -526,12 +526,12 @@ export class PreloadManager {
     /**
      * 🎯 预热关键资源（适配新的单Bundle结构）
      */
-    private async preloadCriticalAssets(startProgress: number, endProgress: number): Promise<void> {
+    private async preloadCriticalAssetsWithProgress(startProgress: number, endProgress: number): Promise<void> {
         this.reportProgress(startProgress, '正在预热关键资源...');
         
         const bundle = this.getLoadedBundle(this.BUNDLE_NAME);
         if (!bundle) {
-            console.error(`[PreloadManager.preloadCriticalAssets] ❌ Bundle '${this.BUNDLE_NAME}' 未加载`);
+            console.error(`[PreloadManager.preloadCriticalAssetsWithProgress] ❌ Bundle '${this.BUNDLE_NAME}' 未加载`);
             return;
         }
 
