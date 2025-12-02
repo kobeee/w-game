@@ -197,19 +197,16 @@ export class GameApp extends Component {
         }
     }
 
-    private startGame(): void {
+    private async startGame(): Promise<void> {
+        // 重置游戏状态
+        this.gameTimer = 0;
         this.isGameRunning = true;
         this.roundsCompleted = 0;
-        
-        // 重置HUD
-        if (this.hud) {
-            this.hud.reset();
-        }
 
-        // 开始计时器
+        // 开始倒计时
         this.startTimer();
-        
-        // 开始第一轮
+
+        // 生成第一个目标词
         this.nextRound();
     }
 

@@ -43,6 +43,26 @@ export class AudioMgr {
             path: 'audio/music/background',
             volume: 0.3,
             loop: true
+        },
+        'shuffle': {
+            path: 'audio/sfx/shuffle',
+            volume: 0.6,
+            loop: false
+        },
+        'pop_up': {
+            path: 'audio/sfx/popup',
+            volume: 0.5,
+            loop: false
+        },
+        'star': {
+            path: 'audio/sfx/star_collect',
+            volume: 0.8,
+            loop: false
+        },
+        'game_over': {
+            path: 'audio/sfx/game_over',
+            volume: 0.7,
+            loop: false
         }
     };
 
@@ -88,6 +108,34 @@ export class AudioMgr {
      */
     playClick(): void {
         this.playSound('click');
+    }
+
+    /**
+     * 播放洗牌音效
+     */
+    playShuffle(): void {
+        this.playSound('shuffle');
+    }
+
+    /**
+     * 播放弹出音效
+     */
+    playPopUp(): void {
+        this.playSound('pop_up');
+    }
+
+    /**
+     * 播放星星收集音效
+     */
+    playStar(): void {
+        this.playSound('star');
+    }
+
+    /**
+     * 播放游戏结束音效
+     */
+    playGameOver(): void {
+        this.playSound('game_over');
     }
 
     /**
@@ -193,11 +241,16 @@ export class AudioMgr {
 
     private loadSingleAudioClip(key: string, path: string): Promise<void> {
         return new Promise((resolve) => {
+            console.log(`[AudioMgr] 开始加载音频: ${key} -> ${path}`);
             resources.load(path, AudioClip, (err, clip) => {
                 if (err) {
                     console.warn(`[AudioMgr] 加载音频失败: ${path}`, err.message || err);
-                } else {
+                    console.warn(`[AudioMgr] 错误详情:`, err);
+                } else if (clip) {
                     this.audioClips.set(key, clip);
+                    console.log(`[AudioMgr] ✅ 音频加载成功: ${key}`);
+                } else {
+                    console.warn(`[AudioMgr] 音频加载返回null: ${path}`);
                 }
                 resolve();
             });
@@ -205,12 +258,19 @@ export class AudioMgr {
     }
 
     private playSound(key: string): void {
+        console.log(`[AudioMgr] 尝试播放音效: ${key}`);
+        console.log(`[AudioMgr] isEnabled: ${this.isEnabled}, isInitialized: ${this.isInitialized}, audioSource存在: ${!!this.audioSource}`);
+        
         if (!this.isEnabled || !this.isInitialized || !this.audioSource) {
+            console.warn(`[AudioMgr] 音效播放条件不满足: ${key}`);
             return;
         }
 
         const clip = this.audioClips.get(key);
         const config = this.audioConfigs[key];
+
+        console.log(`[AudioMgr] 已加载的音效数量: ${this.audioClips.size}`);
+        console.log(`[AudioMgr] 音效列表: ${Array.from(this.audioClips.keys()).join(', ')}`);
 
         if (!clip) {
             console.warn(`[AudioMgr] 音效不存在: ${key}`);
@@ -223,8 +283,11 @@ export class AudioMgr {
         }
 
         try {
+            console.log(`[AudioMgr] 音效Clip存在: ${!!clip}, 音效配置存在: ${!!config}`);
+            
             // 如果是背景音乐且已在播放，不重复播放
             if (key === 'bg_music' && this.audioSource.playing) {
+                console.log('[AudioMgr] 背景音乐已在播放，跳过');
                 return;
             }
 
@@ -233,8 +296,11 @@ export class AudioMgr {
             this.audioSource.loop = config.loop;
             this.audioSource.volume = config.volume * this.masterVolume;
 
+            console.log(`[AudioMgr] 设置完成 - loop: ${config.loop}, volume: ${config.volume * this.masterVolume}`);
+
             // 播放音频
             this.audioSource.play();
+            console.log(`[AudioMgr] ✅ 音效播放命令已发送: ${key}`);
         } catch (error) {
             console.error(`[AudioMgr] 播放音效失败: ${key}`, error);
         }

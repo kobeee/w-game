@@ -3,6 +3,7 @@ import { AssetLoader } from '../core/AssetLoader';
 import { TimezoneSync } from '../services/TimezoneSync';
 import { GameMode, GAME_MODE_CONFIGS, DEFAULT_GAME_MODE, GAME_MODE_STORAGE_KEY } from '../data/GameMode';
 import { PreloadManager } from './PreloadManager';
+import { AudioMgr } from '../util/AudioMgr';
 // 尽早导入 AbortController polyfill，确保微信小游戏兼容性
 import '../util/AbortControllerPolyfill';
 // 使用统一AssetLoader，完全利用Cocos Creator 3.8.7缓存机制
@@ -41,6 +42,7 @@ export class MainMenu extends Component {
     // ========== 私有变量 ==========
     private selectedGameMode: GameMode = DEFAULT_GAME_MODE;
     private isSyncingGameMode = false;
+    private audioMgr: AudioMgr = new AudioMgr();
 
     protected async onLoad(): Promise<void> {
         // 🔍 监控微信小游戏内存状态
@@ -60,6 +62,16 @@ export class MainMenu extends Component {
         }
         
         await this.loadRemoteAssets(); // 动态加载远程资源
+        
+        // 初始化音频管理器并播放背景音乐
+        console.log('[MainMenu] 初始化音频管理器');
+        this.audioMgr.init();
+        
+        // 延迟一秒播放背景音乐，确保音频加载完成
+        this.scheduleOnce(() => {
+            console.log('[MainMenu] 开始播放背景音乐');
+            this.audioMgr.playBackgroundMusic();
+        }, 1.0);
         
         // 🚀 启动主菜单后台资源加载
         this.startBackgroundResourceLoading();
