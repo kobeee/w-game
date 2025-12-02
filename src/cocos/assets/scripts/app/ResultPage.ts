@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, Button, ScrollView, Prefab, instantiate, director, sys, Color, resources, Sprite, assetManager, SpriteFrame } from 'cc';
+import { _decorator, Component, Node, Label, Button, ScrollView, Prefab, instantiate, director, sys, Color, resources, Sprite, assetManager, SpriteFrame, UITransform } from 'cc';
 import { GlossService } from '../data/GlossService';
 import { GlossSheet } from '../ui/GlossSheet';
 // 使用assetManager.loadBundle动态加载远程Asset Bundle资源
@@ -160,6 +160,7 @@ export class ResultPage extends Component {
 
         if (this.sessionNotebook.length === 0) {
             this.createEmptyStateNode();
+            this.updateContentHeight(0);
             return;
         }
 
@@ -173,6 +174,8 @@ export class ResultPage extends Component {
             }
         }
 
+        // 动态更新content高度以启用滚动
+        this.updateContentHeight(this.sessionNotebook.length);
         
     }
 
@@ -180,11 +183,15 @@ export class ResultPage extends Component {
         // 创建空状态显示
         const emptyNode = new Node('EmptyState');
         const emptyLabel = emptyNode.addComponent(Label);
+        const emptyTransform = emptyNode.addComponent(UITransform);
         
         emptyLabel.string = '本局没有查看词义的单词\n下次游戏时答对单词会自动显示词义哦！';
         emptyLabel.fontSize = 24;
         emptyLabel.lineHeight = 30;
         emptyLabel.color = new Color(128, 128, 128, 255);
+        
+        // 设置空状态节点的高度
+        emptyTransform.setContentSize(400, 100);
         
         this.notebookContent.addChild(emptyNode);
     }
@@ -219,7 +226,45 @@ export class ResultPage extends Component {
             this.onInfoButtonClicked(word);
         });
 
+        // 设置条目的位置（垂直排列）
+        const itemTransform = itemNode.getComponent(UITransform);
+        if (itemTransform) {
+            // WordItem预制体高度为80px，添加10px间距
+            const itemHeight = 80;
+            const spacing = 10;
+            const currentIndex = this.notebookContent.children.length - 1;
+            const yPos = -(currentIndex * (itemHeight + spacing));
+            itemNode.setPosition(0, yPos, 0);
+        }
+
         this.notebookContent.addChild(itemNode);
+    }
+
+    /**
+     * 更新ScrollView内容的高度
+     * @param itemCount 项目数量
+     */
+    private updateContentHeight(itemCount: number): void {
+        if (!this.notebookContent) return;
+
+        const contentTransform = this.notebookContent.getComponent(UITransform);
+        if (!contentTransform) return;
+
+        if (itemCount === 0) {
+            // 空状态高度为100px
+            contentTransform.setContentSize(contentTransform.width, 100);
+        } else {
+            // 每个项目高度80px + 10px间距
+            const itemHeight = 80;
+            const spacing = 10;
+            const totalHeight = itemCount * (itemHeight + spacing) + spacing; // 顶部额外间距
+            contentTransform.setContentSize(contentTransform.width, totalHeight);
+        }
+
+        // 重置ScrollView位置到顶部
+        if (this.notebookScrollView) {
+            this.notebookScrollView.scrollToTop(0.1);
+        }
     }
 
     /**

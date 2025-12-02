@@ -1,5 +1,21 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-12-02 - 🐛 [UI FIX] 结果页面滚动问题修复（小试牛刀+叠叠乐）
+
+### 🚨 问题修复
+- **小试牛刀结果列表无法滚动**：ResultPage.ts 中添加动态内容高度计算，设置每个单词项目的正确位置和高度
+- **叠叠乐结果列表滑动回弹**：StackGameApp.ts 中禁用ScrollView弹性效果，添加内容高度动态计算
+- **UITransform重复添加组件报错**：修复Row节点创建时重复添加UITransform组件的错误
+
+### 📁 修改文件清单
+- `src/cocos/assets/scripts/app/ResultPage.ts` - 添加动态内容高度计算和位置设置
+- `src/cocos/assets/scripts/app/StackGameApp.ts` - 修复滑动回弹和UITransform重复添加问题
+
+### ✅ 修复效果
+- **小试牛刀场景**：结果页面单词列表可以正常滚动查看所有生词
+- **叠叠乐场景**：结果页面单词列表滑动无回弹，用户体验流畅
+- **稳定性提升**：消除UITransform重复添加导致的运行时错误
+
 ## 2025-12-02 - 🔊 [AUDIO] 音效系统全面修复（点击音效+结束音效）
 
 ### 🚨 问题修复
