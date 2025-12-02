@@ -16,6 +16,7 @@ import { WordPoolSelector, WordPoolConfig, Difficulty, WordPoolStrategy } from '
 import { PreloadManager } from './PreloadManager';
 // 尽早导入 AbortController polyfill，确保微信小游戏兼容性
 import '../util/AbortControllerPolyfill';
+import { AudioMgr } from '../util/AudioMgr';
 
 const { ccclass, property } = _decorator;
 
@@ -84,6 +85,7 @@ export class StackGameApp extends Component {
     @property(Node)
     public definitionHintsRoot: Node = null!;
 
+    private audioMgr: AudioMgr = new AudioMgr();
     private currentLevel: Level | null = null;
     private wordMatcher: IWordMatcher | null = null; // 延迟初始化，确保GlossService已加载
     private gameState: GameState = GameState.IDLE;
@@ -130,6 +132,9 @@ export class StackGameApp extends Component {
         } catch (error) {
             console.error('[StackGameApp] 单词验证系统初始化失败:', error);
         }
+
+        // 初始化音频管理器
+        this.audioMgr.init();
 
         // 降级方案：如果词库未加载（直接预览Game场景时），执行加载
         const glossService = GlossService.getInstance();
@@ -478,6 +483,9 @@ export class StackGameApp extends Component {
             return;
         }
 
+        // 立即播放点击音效
+        this.audioMgr.playClick();
+
         // 检查牌槽是否已满
         if (this.slotQueue.isFull()) {
             console.warn('[StackGameApp] 牌槽已满');
@@ -499,10 +507,9 @@ export class StackGameApp extends Component {
             return;
         }
 
-        
-
         // 移除卡片（飞向牌槽动画），返回字母牌节点
         this.stackBoard.removeCard(card.id, targetLocalPos).then((tileNode) => {
+
             // 添加字母到牌槽，并传递飞过来的节点
             this.slotQueue.addLetter(card.letter, tileNode || undefined);
 
@@ -598,6 +605,8 @@ export class StackGameApp extends Component {
                 };
                 this.gameState = GameState.BLINKING;
                 this.slotQueue.startBlink(this.currentMatch);
+                // 播放匹配音效
+                this.audioMgr.playMatchFound();
             }
 
             this.validationsInFlight = Math.max(0, this.validationsInFlight - 1);
@@ -678,6 +687,8 @@ export class StackGameApp extends Component {
 
                 // 触发闪烁动画
                 this.slotQueue.startBlink(match);
+                // 播放匹配音效
+                this.audioMgr.playMatchFound();
             }
         }
 
@@ -747,6 +758,8 @@ export class StackGameApp extends Component {
 
         // 播放消除动画
         this.slotQueue.removeWord(match);
+        // 播放消除音效
+        this.audioMgr.playWordClear();
 
 		// 记录消除的单词并获取释义
         const glossService = GlossService.getInstance();
@@ -869,6 +882,9 @@ export class StackGameApp extends Component {
         if (this.gameState === GameState.ENDED) return;
 
         this.gameState = GameState.ENDED;
+
+        // 播放游戏结束音效
+        this.audioMgr.playGameOver();
 
         const totalCards = this.stackBoard.getTotalCount();
         const remaining = this.stackBoard.getRemainingCount();

@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, Prefab, instantiate, Vec3, Layout, UITransform } from 'cc';
 import { LetterTile, TileState } from './LetterTile';
+import { AudioMgr } from '../util/AudioMgr';
 
 const { ccclass, property } = _decorator;
 
@@ -26,6 +27,7 @@ export class GameBoard extends Component {
     private selectedPath: GridPosition[] = [];
     private currentTargetWord: string = '';
     private gridLetters: string[][] = [];
+    private audioMgr: AudioMgr = new AudioMgr();
 
     // 4方向移动（上、下、左、右）- 移除斜线连接提升可见性
     private readonly directions: GridPosition[] = [
@@ -39,6 +41,8 @@ export class GameBoard extends Component {
         this.cols = 5;
         
         this.setupContainer();
+        // 初始化音效管理器
+        this.audioMgr.init();
     }
 
     /**
@@ -307,6 +311,9 @@ export class GameBoard extends Component {
 
     private onTileClicked(row: number, col: number, tile: LetterTile): void {
         const position = { row, col };
+        
+        // 播放点击音效
+        this.audioMgr.playClick();
         
         // 检查是否点击了已选择路径的最后一个瓦片（撤销操作）
         if (this.selectedPath.length > 0) {

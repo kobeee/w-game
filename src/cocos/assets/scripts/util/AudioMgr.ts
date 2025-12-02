@@ -59,6 +59,16 @@ export class AudioMgr {
             volume: 0.8,
             loop: false
         },
+        'match_found': {
+            path: 'audio/sfx/match_found',
+            volume: 0.7,
+            loop: false
+        },
+        'word_clear': {
+            path: 'audio/sfx/word_clear',
+            volume: 0.8,
+            loop: false
+        },
         'game_over': {
             path: 'audio/sfx/game_over',
             volume: 0.7,
@@ -129,6 +139,20 @@ export class AudioMgr {
      */
     playStar(): void {
         this.playSound('star');
+    }
+
+    /**
+     * 播放匹配发现音效 (闪烁开始)
+     */
+    playMatchFound(): void {
+        this.playSound('match_found');
+    }
+
+    /**
+     * 播放单词消除音效
+     */
+    playWordClear(): void {
+        this.playSound('word_clear');
     }
 
     /**

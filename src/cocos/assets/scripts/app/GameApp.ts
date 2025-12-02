@@ -342,6 +342,9 @@ export class GameApp extends Component {
     private endGame(): void {
         this.stopGameLoop();
         
+        // 播放游戏结束音效
+        this.audioMgr.playGameOver();
+        
         // 保存本局生词本（GlossService内部已处理）
         
         console.log('[GameApp] 游戏结束，开始预加载结果页...');

@@ -1,5 +1,40 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-12-02 - 🔊 [AUDIO] 音效系统全面修复（点击音效+结束音效）
+
+### 🚨 问题修复
+- **小试牛刀点击音效缺失**：GameBoard.ts 中添加 AudioMgr 导入和初始化，在 onTileClicked 方法中播放点击音效
+- **叠叠乐点击音效延迟**：StackGameApp.ts 中将 playClick() 移至 onCardClicked 方法开头，确保点击时立即播放
+- **游戏结束音效缺失**：GameApp.ts 和 StackGameApp.ts 的 endGame() 方法中添加 playGameOver() 调用
+
+### 📁 修改文件清单
+- `src/cocos/assets/scripts/ui/GameBoard.ts` - 添加 AudioMgr 导入和点击音效
+- `src/cocos/assets/scripts/app/StackGameApp.ts` - 修复点击音效播放时机
+- `src/cocos/assets/scripts/app/GameApp.ts` - 添加游戏结束音效
+- `src/cocos/assets/scripts/app/StackGameApp.ts` - 添加游戏结束音效
+
+### ✅ 修复效果
+- **小试牛刀场景**：点击字母卡片时立即播放 click 音效
+- **叠叠乐场景**：点击字母卡片时立即播放 click 音效（而非等到卡片飞向牌槽）
+- **两个场景**：游戏结束时都播放 game_over 音效，提供完整的游戏结束反馈
+
+## 2025-12-02 - 🔊 [AUDIO] 叠叠乐专属音效增强与全量音效重制
+
+### 🎵 音效系统重构
+- **技术方案升级**：弃用外部素材拼接，转为使用 Python (`tools/generate_sfx.py`) 基于数学算法（正弦/方波+ADSR包络）实时合成高品质 WAV 音效。
+- **格式统一**：全量切换为无损 WAV 格式，确保循环播放无缝隙，提升听感纯净度。
+- **资源清理**：移除所有旧版 MP3 文件，保持项目整洁。
+
+### ✨ 叠叠乐体验增强
+- **单词命中 (Match Found)**：新增 `match_found.wav`（C6-E6-G6 上行三和弦），在单词被检测到并开始闪烁时播放，提供明确的“发现”反馈。
+- **消除反馈 (Word Clear)**：新增 `word_clear.wav`（频率滑音+噪声爆发），配合消除动画，提供爽快的消除打击感。
+
+### 📁 修改文件清单
+- `tools/generate_sfx.py` - 新增音频合成脚本
+- `src/cocos/assets/scripts/util/AudioMgr.ts` - 注册新音效接口
+- `src/cocos/assets/scripts/app/StackGameApp.ts` - 集成命中与消除音效逻辑
+- `src/cocos/assets/resources/audio/` - 全量替换为 .wav 资源（除了background）
+
 ## 2025-12-01 - 🔊 [AUDIO] 音效系统全面升级（FFmpeg生成+文件优化）
 
 ### 🎵 音效文件更新
