@@ -1,4 +1,4 @@
-import { _decorator, assetManager, SpriteFrame } from 'cc';
+import { _decorator, assetManager, SpriteFrame, AudioClip } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -43,14 +43,14 @@ export class AssetLoader {
                     }
                     
                     // 第三步：如果资源未完全加载，进行完全加载
-                    return await this.loadAssetFromBundle(bundle, assetPath);
+                    return await this.loadSpriteFrameFromBundle(bundle, assetPath);
                 }
                 
                 // 第四步：Bundle未缓存，需要动态加载Bundle
                 bundle = await this.loadBundle(bundleName);
                 
                 // 第五步：从新加载的Bundle中完全加载资源
-                return await this.loadAssetFromBundle(bundle, assetPath);
+                return await this.loadSpriteFrameFromBundle(bundle, assetPath);
                 
             } catch (error) {
                 const errorMsg = error ? (error.message || error.errMsg || String(error)) : 'Unknown error';
@@ -93,16 +93,15 @@ export class AssetLoader {
                     return;
                 }
                 
-                
                 resolve(bundle);
             });
         });
     }
     
     /**
-     * 从Bundle中加载资源
+     * 从Bundle中加载SpriteFrame资源
      */
-    private loadAssetFromBundle(bundle: assetManager.Bundle, assetPath: string): Promise<SpriteFrame> {
+    private loadSpriteFrameFromBundle(bundle: assetManager.Bundle, assetPath: string): Promise<SpriteFrame> {
         return new Promise((resolve, reject) => {
             bundle.load(assetPath, SpriteFrame, (err, spriteFrame) => {
                 if (err) {
@@ -111,8 +110,78 @@ export class AssetLoader {
                     return;
                 }
                 
-                
                 resolve(spriteFrame);
+            });
+        });
+    }
+    
+    /**
+     * 智能加载 AudioClip - 与 SpriteFrame 相同的缓存与429重试策略
+     * @param bundleName Bundle名称
+     * @param assetPath 资源路径（例如 audio/sfx/click）
+     */
+    public async loadAudioClip(bundleName: string, assetPath: string): Promise<AudioClip> {
+        const maxRetries = 2;
+        const retryDelay = 2000;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // 优先使用已缓存的Bundle
+                let bundle = assetManager.getBundle(bundleName);
+                
+                if (bundle) {
+                    // 先尝试从缓存中直接获取
+                    const cachedClip = bundle.get(assetPath, AudioClip);
+                    if (cachedClip) {
+                        return cachedClip;
+                    }
+                    
+                    // 未缓存则从Bundle中完全加载
+                    return await this.loadAudioClipFromBundle(bundle, assetPath);
+                }
+                
+                // Bundle未缓存时动态加载（受WXNetworkGate并发与429控制）
+                bundle = await this.loadBundle(bundleName);
+                return await this.loadAudioClipFromBundle(bundle, assetPath);
+                
+            } catch (error) {
+                const errorMsg = error ? (error.message || (error as any).errMsg || String(error)) : 'Unknown error';
+                const is429 = errorMsg.includes('429');
+                
+                if (attempt === maxRetries) {
+                    if (is429) {
+                        console.error(`[AssetLoader] ❌ 429错误重试失败: ${bundleName}/${assetPath}`);
+                    } else {
+                        console.error(`[AssetLoader] ❌ 加载AudioClip失败: ${bundleName}/${assetPath}`, error);
+                    }
+                    throw error;
+                }
+                
+                const delay = is429 ? retryDelay * 2 : retryDelay;
+                if (attempt === 1) {
+                    console.warn(`[AssetLoader] ⚠️ 加载失败，${delay / 1000}秒后重试: ${bundleName}/${assetPath}`);
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+        
+        throw new Error(`[AssetLoader] 加载失败: ${bundleName}/${assetPath}`);
+    }
+    
+    /**
+     * 从Bundle中加载 AudioClip 资源
+     */
+    private loadAudioClipFromBundle(bundle: assetManager.Bundle, assetPath: string): Promise<AudioClip> {
+        return new Promise((resolve, reject) => {
+            bundle.load(assetPath, AudioClip, (err, clip) => {
+                if (err) {
+                    console.error(`[AssetLoader] 音频资源加载失败: ${assetPath}`, err);
+                    reject(err);
+                    return;
+                }
+                
+                resolve(clip);
             });
         });
     }

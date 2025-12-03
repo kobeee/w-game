@@ -556,8 +556,8 @@ export class PreloadManager {
                     
                     // 🔥 瓦片资源增加额外间隔，避免429
                     if (assetPath.includes('tiles/tile_')) {
-                        console.log('[PreloadManager] 🧊 瓦片资源加载完成，冷却1.5秒...');
-                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        console.log('[PreloadManager] 🧊 瓦片资源加载完成，冷却0.5秒...');
+                        await new Promise(resolve => setTimeout(resolve, 500));
                     }
                 } catch (error) {
                     console.warn(`[PreloadManager] 资源预热失败: ${assetPath}`, error);

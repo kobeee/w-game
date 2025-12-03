@@ -1,6 +1,10 @@
-import { _decorator, AudioClip, AudioSource, resources, director, Node } from 'cc';
+import { _decorator, AudioClip, AudioSource, director, Node } from 'cc';
+import { AssetLoader } from '../core/AssetLoader';
 
 const { ccclass } = _decorator;
+
+// 微信小游戏类型声明（用于环境分支避免429）
+declare const wx: any;
 
 // 音频管理器配置接口
 interface AudioConfig {
@@ -16,6 +20,8 @@ export class AudioMgr {
     private isInitialized: boolean = false;
     private isEnabled: boolean = true;
     private masterVolume: number = 1.0;
+    // 统一使用远程bundle名称（与 PreloadManager / AssetLoader 保持一致）
+    private readonly BUNDLE_NAME: string = 'bundle';
 
     // 音效配置
     private audioConfigs: { [key: string]: AudioConfig } = {
@@ -55,7 +61,7 @@ export class AudioMgr {
             loop: false
         },
         'star': {
-            path: 'audio/sfx/star_collect',
+            path: 'audio/sfx/star',
             volume: 0.8,
             loop: false
         },
@@ -245,40 +251,55 @@ export class AudioMgr {
     }
 
     private async loadAudioClips(): Promise<void> {
-        const loadPromises: Promise<void>[] = [];
-
-        for (const key in this.audioConfigs) {
-            if (this.audioConfigs.hasOwnProperty(key)) {
-                const config = this.audioConfigs[key];
-                loadPromises.push(this.loadSingleAudioClip(key, config.path));
-            }
+        const keys = Object.keys(this.audioConfigs);
+        if (keys.length === 0) {
+            return;
         }
+
+        const isWeChat = typeof wx !== 'undefined';
 
         try {
-            await Promise.all(loadPromises);
+            if (isWeChat) {
+                // 微信环境：串行加载，进一步降低瞬时并发，配合底层 WXNetworkGate 避免429
+                console.log('[AudioMgr] 📱 微信环境：串行预加载音频资源');
+                for (const key of keys) {
+                    const config = this.audioConfigs[key];
+                    await this.loadSingleAudioClip(key, config.path);
+                    // 轻微间隔，避免与其他资源尖峰重叠
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            } else {
+                // 其他环境：并行加载，加快启动速度
+                console.log('[AudioMgr] 🌐 非微信环境：并行预加载音频资源');
+                await Promise.all(
+                    keys.map(key => {
+                        const config = this.audioConfigs[key];
+                        return this.loadSingleAudioClip(key, config.path);
+                    })
+                );
+            }
         } catch (error) {
-            console.warn('[AudioMgr] 部分音频加载失败', error);
+            console.warn('[AudioMgr] 部分音频加载失败（已忽略，运行时将按需重试）', error);
         }
-        
-        
     }
 
-    private loadSingleAudioClip(key: string, path: string): Promise<void> {
-        return new Promise((resolve) => {
-            console.log(`[AudioMgr] 开始加载音频: ${key} -> ${path}`);
-            resources.load(path, AudioClip, (err, clip) => {
-                if (err) {
-                    console.warn(`[AudioMgr] 加载音频失败: ${path}`, err.message || err);
-                    console.warn(`[AudioMgr] 错误详情:`, err);
-                } else if (clip) {
-                    this.audioClips.set(key, clip);
-                    console.log(`[AudioMgr] ✅ 音频加载成功: ${key}`);
-                } else {
-                    console.warn(`[AudioMgr] 音频加载返回null: ${path}`);
-                }
-                resolve();
-            });
-        });
+    private async loadSingleAudioClip(key: string, path: string): Promise<void> {
+        const assetPath = path; // 在bundle中的资源路径，例如 audio/sfx/click
+        const assetLoader = AssetLoader.getInstance();
+
+        console.log(`[AudioMgr] 开始通过bundle加载音频: ${key} -> ${this.BUNDLE_NAME}/${assetPath}`);
+
+        try {
+            const clip = await assetLoader.loadAudioClip(this.BUNDLE_NAME, assetPath);
+            if (clip) {
+                this.audioClips.set(key, clip);
+                console.log(`[AudioMgr] ✅ 音频加载成功: ${key}`);
+            } else {
+                console.warn(`[AudioMgr] 音频加载结果为空: ${this.BUNDLE_NAME}/${assetPath}`);
+            }
+        } catch (error) {
+            console.warn(`[AudioMgr] 加载音频失败: ${this.BUNDLE_NAME}/${assetPath}`, error);
+        }
     }
 
     private playSound(key: string): void {

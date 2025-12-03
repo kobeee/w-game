@@ -1,5 +1,22 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-12-03 - 🔊 [AUDIO] 音频加载切换为远程 Bundle + 缓存体系
+
+### 🎵 技术改动
+- **统一音频加载入口**：`AudioMgr.ts` 从原来的 `resources.load('audio/...')` 本地资源加载，切换为通过 `AssetLoader.loadAudioClip('bundle', 'audio/...')` 从远程 `bundle` 资源包拉取音频。
+- **远程资源路径对齐**：`audio/music/background`、`audio/sfx/click` 等路径对应的实际文件已迁移至 `src/cocos/assets/bundle/audio/...`，与现有 `bg`、`tiles`、`words` 等资源同库管理。
+- **微信环境串行加载**：在微信小游戏环境（`typeof wx !== 'undefined'`）下，音频预加载改为**串行**依次加载并在单个音效间插入轻微延迟，进一步降低单点并发峰值，配合底层 `WXNetworkGate` 避免 429。
+- **加载重试与缓存复用**：`AssetLoader` 新增 `loadAudioClip()` 接口，沿用 SpriteFrame 的 429 识别与指数退避重试策略，并优先命中 `assetManager` 的 Bundle 级缓存，`AudioMgr` 内部继续通过 Map 维护已加载的 `AudioClip`，确保后续播放不再触发网络请求。
+
+### 📁 修改文件清单
+- `src/cocos/assets/scripts/core/AssetLoader.ts` - 新增 `loadAudioClip` 与 `loadAudioClipFromBundle`，为音频提供统一的远程加载与429重试逻辑。
+- `src/cocos/assets/scripts/util/AudioMgr.ts` - 移除 `resources.load`，改为通过远程 `bundle` + `AssetLoader` 串行预加载音频资源，并在微信环境下控制加载顺序与节奏。
+
+### ✅ 效果
+- **429 风险降低**：音频加载纳入统一的 Bundle + WXNetworkGate 并发控制体系，微信小游戏环境下不再额外制造高并发下载峰值。
+- **访问加速**：音频文件首次加载后同时命中引擎缓存和 `AudioMgr` 内存 Map，重复播放与跨场景复用时无需再次访问网络。
+- **行为兼容**：`AudioMgr` 的对外 API（如 `playClick`、`playGameOver` 等）保持不变，现有调用方无需修改。
+
 ## 2025-12-02 - 🐛 [UI FIX] 结果页面滚动问题修复（小试牛刀+叠叠乐）
 
 ### 🚨 问题修复
