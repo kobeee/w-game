@@ -25,9 +25,12 @@ export class MainMenu extends Component {
     @property(Toggle)
     stackModeToggle: Toggle = null!;
 
-    // ========== 词库设置 ==========
+    // ========== 游戏设置 ==========
     @property(Toggle)
     useFullToggle: Toggle = null!;
+
+    @property(Toggle)
+    soundToggle: Toggle = null!;
 
     // ========== UI元素 ==========
     @property(Sprite)
@@ -42,7 +45,7 @@ export class MainMenu extends Component {
     // ========== 私有变量 ==========
     private selectedGameMode: GameMode = DEFAULT_GAME_MODE;
     private isSyncingGameMode = false;
-    private audioMgr: AudioMgr = new AudioMgr();
+    private audioMgr: AudioMgr = AudioMgr.getInstance();
 
     protected async onLoad(): Promise<void> {
         // 🔍 监控微信小游戏内存状态
@@ -63,15 +66,22 @@ export class MainMenu extends Component {
         
         await this.loadRemoteAssets(); // 动态加载远程资源
         
-        // 初始化音频管理器并播放背景音乐
+        // 初始化音频管理器
         console.log('[MainMenu] 初始化音频管理器');
         this.audioMgr.init();
         
-        // 延迟一秒播放背景音乐，确保音频加载完成
-        this.scheduleOnce(() => {
-            console.log('[MainMenu] 开始播放背景音乐');
-            this.audioMgr.playBackgroundMusic();
-        }, 1.0);
+        // 强制重新加载设置，确保场景切换后保持用户设置
+        this.audioMgr.forceReloadSettings();
+        
+        const isSoundEnabled = this.audioMgr.getEnabled();
+        
+        // 如果音效开启，延迟一秒播放背景音乐
+        if (isSoundEnabled) {
+            this.scheduleOnce(() => {
+                console.log('[MainMenu] 开始播放背景音乐');
+                this.audioMgr.playBackgroundMusic();
+            }, 1.0);
+        }
         
         // 🚀 启动主菜单后台资源加载
         this.startBackgroundResourceLoading();
@@ -132,6 +142,13 @@ export class MainMenu extends Component {
         this.refreshUI();
     }
 
+    protected start(): void {
+        // 确保在场景完全加载后再次同步UI状态
+        this.scheduleOnce(() => {
+            this.syncSoundToggleState();
+        }, 0.1);
+    }
+
     private setupButtons(): void {
         // 设置开始按钮
         if (this.startButton) {
@@ -153,6 +170,11 @@ export class MainMenu extends Component {
         // 设置词库切换开关
         if (this.useFullToggle) {
             this.useFullToggle.node.on('toggle', this.onToggleChanged, this);
+        }
+
+        // 设置音效切换开关
+        if (this.soundToggle) {
+            this.soundToggle.node.on('toggle', this.onSoundToggleChanged, this);
         }
     }
 
@@ -178,6 +200,9 @@ export class MainMenu extends Component {
         if (this.useFullToggle) {
             this.useFullToggle.isChecked = useFullDictionary;
         }
+
+        // 3. 音效设置将在 AudioMgr.init() 和 forceReloadSettings() 中处理
+        // 这里不需要单独设置，避免与 AudioMgr 缓存冲突
         
         
     }
@@ -191,6 +216,12 @@ export class MainMenu extends Component {
             const useFull = this.useFullToggle.isChecked;
             sys.localStorage.setItem('use_full_dictionary', useFull ? 'true' : 'false');
         }
+
+        // 保存音效设置
+        if (this.soundToggle) {
+            const soundEnabled = this.soundToggle.isChecked;
+            sys.localStorage.setItem('sound_enabled', soundEnabled ? 'true' : 'false');
+        }
     }
 
     private refreshUI(): void {
@@ -201,6 +232,21 @@ export class MainMenu extends Component {
 
         // 显示当前词库模式
         this.updateDictionaryModeDisplay();
+        
+        // 同步音效Toggle状态
+        this.syncSoundToggleState();
+    }
+
+    /**
+     * 同步音效Toggle状态
+     */
+    private syncSoundToggleState(): void {
+        if (this.soundToggle) {
+            // 直接从 AudioMgr 获取最新的设置状态
+            const isSoundEnabled = this.audioMgr.getEnabled();
+            this.soundToggle.isChecked = isSoundEnabled;
+            console.log(`[MainMenu] 同步音效Toggle状态: ${isSoundEnabled}`);
+        }
     }
 
     /**
@@ -316,6 +362,25 @@ export class MainMenu extends Component {
         this.saveSettings();
     }
 
+    private onSoundToggleChanged(toggle: Toggle): void {
+        // 应用音效设置到音频管理器
+        if (this.soundToggle) {
+            const soundEnabled = this.soundToggle.isChecked;
+            this.audioMgr.setEnabled(soundEnabled);
+            
+            // 如果关闭音效，停止当前播放的背景音乐
+            if (!soundEnabled) {
+                this.audioMgr.stopBackgroundMusic();
+            } else {
+                // 如果开启音效，播放背景音乐
+                this.audioMgr.playBackgroundMusic();
+            }
+        }
+        
+        // 实时保存设置（注意：AudioMgr.setEnabled 已经保存了，这里可以不重复保存）
+        this.saveSettings();
+    }
+
     /**
      * 重置游戏数据（可选功能）
      */
@@ -410,6 +475,10 @@ export class MainMenu extends Component {
         
         if (this.useFullToggle && this.useFullToggle.node) {
             this.useFullToggle.node.off('toggle', this.onToggleChanged, this);
+        }
+        
+        if (this.soundToggle && this.soundToggle.node) {
+            this.soundToggle.node.off('toggle', this.onSoundToggleChanged, this);
         }
         
         

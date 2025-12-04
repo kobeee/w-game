@@ -1,4 +1,4 @@
-import { _decorator, AudioClip, AudioSource, director, Node } from 'cc';
+import { _decorator, AudioClip, AudioSource, director, Node, sys } from 'cc';
 import { AssetLoader } from '../core/AssetLoader';
 
 const { ccclass } = _decorator;
@@ -15,6 +15,7 @@ interface AudioConfig {
 
 @ccclass('AudioMgr')
 export class AudioMgr {
+    private static instance: AudioMgr | null = null;
     private audioSource: AudioSource | null = null;
     private audioClips: Map<string, AudioClip> = new Map();
     private isInitialized: boolean = false;
@@ -22,6 +23,20 @@ export class AudioMgr {
     private masterVolume: number = 1.0;
     // 统一使用远程bundle名称（与 PreloadManager / AssetLoader 保持一致）
     private readonly BUNDLE_NAME: string = 'bundle';
+    
+    // 缓存用户设置
+    private cachedSoundEnabled: boolean | null = null;
+    private readonly SOUND_ENABLED_KEY: string = 'sound_enabled';
+
+    /**
+     * 获取单例实例
+     */
+    public static getInstance(): AudioMgr {
+        if (!AudioMgr.instance) {
+            AudioMgr.instance = new AudioMgr();
+        }
+        return AudioMgr.instance;
+    }
 
     // 音效配置
     private audioConfigs: { [key: string]: AudioConfig } = {
@@ -87,15 +102,57 @@ export class AudioMgr {
      */
     init(): void {
         if (this.isInitialized) {
+            // 即使已经初始化，也要重新读取设置并应用
+            this.loadSettingsFromStorage();
             return;
         }
 
-        
+        // 从本地存储读取音效设置（默认开启）
+        this.loadSettingsFromStorage();
         
         this.createAudioSource();
         this.loadAudioClips();
         
         this.isInitialized = true;
+    }
+
+    /**
+     * 从本地存储读取音效设置
+     */
+    private loadSettingsFromStorage(): void {
+        const soundEnabled = sys.localStorage.getItem(this.SOUND_ENABLED_KEY);
+        
+        // 如果有缓存设置，优先使用缓存
+        if (this.cachedSoundEnabled !== null) {
+            this.isEnabled = this.cachedSoundEnabled;
+            console.log(`[AudioMgr] 使用缓存的音效设置: ${this.isEnabled}`);
+            return;
+        }
+        
+        // 否则从 localStorage 读取并缓存
+        this.isEnabled = soundEnabled !== 'false'; // 默认开启
+        this.cachedSoundEnabled = this.isEnabled;
+        console.log(`[AudioMgr] 从存储加载音效设置并缓存: ${this.isEnabled}`);
+    }
+
+    /**
+     * 强制从存储重新加载设置（场景切换时使用）
+     */
+    public forceReloadSettings(): void {
+        const soundEnabled = sys.localStorage.getItem(this.SOUND_ENABLED_KEY);
+        const newEnabled = soundEnabled !== 'false'; // 默认开启
+        
+        // 只有当设置真正改变时才更新
+        if (this.cachedSoundEnabled !== newEnabled) {
+            this.cachedSoundEnabled = newEnabled;
+            this.isEnabled = newEnabled;
+            console.log(`[AudioMgr] 强制重新加载音效设置: ${this.isEnabled}`);
+            
+            // 如果关闭音效，立即停止所有声音
+            if (!this.isEnabled && this.audioSource) {
+                this.audioSource.stop();
+            }
+        }
     }
 
     /**
@@ -203,13 +260,22 @@ export class AudioMgr {
      * @param enabled 是否启用音频
      */
     setEnabled(enabled: boolean): void {
-        this.isEnabled = enabled;
-        
-        if (!enabled) {
-            this.stopAllSounds();
+        // 只有当设置真正改变时才更新
+        if (this.cachedSoundEnabled !== enabled) {
+            this.isEnabled = enabled;
+            this.cachedSoundEnabled = enabled;
+            
+            // 保存到本地存储
+            sys.localStorage.setItem(this.SOUND_ENABLED_KEY, enabled ? 'true' : 'false');
+            
+            if (!enabled) {
+                this.stopAllSounds();
+            }
+            
+            console.log(`[AudioMgr] 音效设置已更新并缓存: ${enabled}`);
+        } else {
+            console.log(`[AudioMgr] 音效设置无变化: ${enabled}`);
         }
-        
-        
     }
 
     /**
@@ -235,6 +301,12 @@ export class AudioMgr {
             return;
         }
 
+        // 先清理旧的音频源
+        if (this.audioSource) {
+            this.audioSource.stop();
+            this.audioSource = null;
+        }
+
         // 在场景根节点创建音频源节点
         const audioNode = scene.getChildByName('AudioMgrNode') || new Node('AudioMgrNode');
         
@@ -245,6 +317,7 @@ export class AudioMgr {
         this.audioSource = audioNode.getComponent(AudioSource) || audioNode.addComponent(AudioSource);
         
         if (this.audioSource) {
+            console.log('[AudioMgr] 音频源创建成功');
         } else {
             console.error('[AudioMgr] 音频源创建失败');
         }
@@ -311,11 +384,18 @@ export class AudioMgr {
             return;
         }
 
+        // 检查音频源是否有效（场景切换可能已销毁）
+        if (!this.audioSource.node || !this.audioSource.node.isValid) {
+            console.warn('[AudioMgr] 音频源已失效，重新创建');
+            this.createAudioSource();
+            if (!this.audioSource) {
+                console.error('[AudioMgr] 音频源创建失败，无法播放音效');
+                return;
+            }
+        }
+
         const clip = this.audioClips.get(key);
         const config = this.audioConfigs[key];
-
-        console.log(`[AudioMgr] 已加载的音效数量: ${this.audioClips.size}`);
-        console.log(`[AudioMgr] 音效列表: ${Array.from(this.audioClips.keys()).join(', ')}`);
 
         if (!clip) {
             console.warn(`[AudioMgr] 音效不存在: ${key}`);
@@ -328,8 +408,6 @@ export class AudioMgr {
         }
 
         try {
-            console.log(`[AudioMgr] 音效Clip存在: ${!!clip}, 音效配置存在: ${!!config}`);
-            
             // 如果是背景音乐且已在播放，不重复播放
             if (key === 'bg_music' && this.audioSource.playing) {
                 console.log('[AudioMgr] 背景音乐已在播放，跳过');
@@ -341,13 +419,13 @@ export class AudioMgr {
             this.audioSource.loop = config.loop;
             this.audioSource.volume = config.volume * this.masterVolume;
 
-            console.log(`[AudioMgr] 设置完成 - loop: ${config.loop}, volume: ${config.volume * this.masterVolume}`);
-
             // 播放音频
             this.audioSource.play();
             console.log(`[AudioMgr] ✅ 音效播放命令已发送: ${key}`);
         } catch (error) {
             console.error(`[AudioMgr] 播放音效失败: ${key}`, error);
+            // 尝试重新创建音频源
+            this.createAudioSource();
         }
     }
 
