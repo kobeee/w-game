@@ -1,5 +1,212 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-01-15 - 🚀 [CRITICAL] ZIP 预下载方案实施 - 彻底根治微信小游戏 429 问题
+
+### 🎯 核心目标
+将 111 次 HTTP 请求减少到 1-2 次，从根本上解决微信小游戏的 429 错误（Too Many Requests）。
+
+### 🔧 实施内容
+
+#### 1. 新增构建工具
+- **tools/build-zip.js** - ZIP 打包脚本，将 remote 目录（111个文件）打包成单个 ZIP
+- **tools/package.json** - 构建工具依赖管理（archiver 7.0.1）
+
+#### 2. 新增核心模块
+- **src/cocos/assets/scripts/core/ZipPreloader.ts** - ZIP 预加载管理器
+  - `ensureResourcesReady()` - 主入口，确保资源就绪
+  - `downloadZip()` - 下载单个 ZIP 文件
+  - `unzipToCache()` - 本地解压到 `wx.env.USER_DATA_PATH`
+  - `checkNeedsDownload()` - 版本检测与缓存校验
+  - 自动回退机制：ZIP 加载失败时回退到原有远程加载
+
+#### 3. 修改 PreloadManager.ts
+- 新增 `preloadWithZip()` - 微信环境下的 ZIP 预加载流程
+- 新增 `loadBundleFromPath()` - 从本地路径加载 Bundle
+- 新增 `preloadWithRemote()` - 原有远程加载逻辑（作为回退）
+- 修改 `preloadStartupBundles()` - 自动选择加载策略
+
+#### 4. 更新部署脚本
+- **tools/deploy-assets.sh** - 支持 ZIP 文件生成与上传
+
+### 📊 效果预期
+
+| 指标 | 修改前 | 修改后 | 改善 |
+|------|--------|--------|------|
+| HTTP 请求数 | 111 次 | **1 次** | 减少 99% |
+| 429 错误 | 频繁 | **彻底消除** | 根治 |
+| 首次加载时间（WiFi） | 30-60秒 | **5-10秒** | 减少 70%+ |
+| 首次加载时间（4G） | 60-120秒 | **10-20秒** | 减少 70%+ |
+| 有缓存加载 | 3-5秒 | **1-2秒** | 减少 50%+ |
+
+### 🔄 工作流程
+
+```
+传统流程（问题根源）：
+Cocos assetManager.loadBundle(远程URL) 
+  → 111次 wx.downloadFile 
+  → 超过微信10并发限制
+  → 429错误
+
+ZIP 预下载流程（解决方案）：
+启动 → 检查本地缓存
+  ├── 有缓存 → assetManager.loadBundle(本地路径) → 无网络请求
+  └── 无缓存 → wx.downloadFile(remote.zip) [1次请求]
+              → wx.getFileSystemManager().unzip() [本地解压]
+              → assetManager.loadBundle(本地路径) → 资源立即可用
+```
+
+### 📁 修改文件清单
+
+**新增文件**：
+- `tools/build-zip.js` - ZIP 打包脚本
+- `tools/package.json` - 构建工具依赖
+- `src/cocos/assets/scripts/core/ZipPreloader.ts` - ZIP 预加载管理器
+
+**修改文件**：
+- `src/cocos/assets/scripts/app/PreloadManager.ts` - 集成 ZIP 预加载
+- `tools/deploy-assets.sh` - 支持 ZIP 部署
+
+### 🔧 使用方法
+
+1. **构建 ZIP**：
+   ```bash
+   cd tools && npm install && npm run build-zip
+   ```
+
+2. **部署资源**：
+   ```bash
+   cd tools && ./deploy-assets.sh
+   ```
+
+### ⚠️ 回退机制
+- ZIP 下载或解压失败时，自动回退到原有远程加载逻辑
+- 浏览器环境不受影响，继续使用远程加载
+- 确保在任何情况下游戏都能正常启动
+
+### 📚 相关文档
+- 详细技术方案：`docs/design/fix/022-ZIP预下载方案-彻底根治429问题.md`
+
+---
+
+## 2025-01-15 - 🔬 [ANALYSIS] 429 问题深度分析与 ZIP 预下载方案设计
+
+### 🚨 问题背景
+微信小游戏环境下 429 错误（Too Many Requests）持续存在，尽管已实施多轮优化（WXNetworkGate 并发控制、熔断机制、Bundle 合并等），问题仍未根治。具体表现：
+- Loading 阶段用户等待时间过长
+- 进入游戏场景后资源加载失败（背景图黑屏、音效不播放）
+- 网络较差时体验极差
+
+### 🔍 深度分析过程
+
+#### 1. Bundle 源文件分析
+对 `src/cocos/assets/bundle` 目录进行详细分析：
+- **总大小**：5.9MB
+- **文件数**：29 个源文件（不含 .meta）
+- **主要构成**：
+  - words (词库): 2.5MB - 含 1.9MB 的 Bloom 过滤器
+  - slot/modal/title (大图): 约 2MB
+  - bg (背景图): 684KB - 3张
+  - audio (音频): 580KB - 11个文件
+  - tiles (瓦片): 60KB - 5个小图
+
+#### 2. 构建产物分析（关键发现）
+对 `src/cocos/build/wechatgame/remote` 目录进行分析，发现 **真正的问题根源**：
+
+| 目录 | 大小 | 文件数 |
+|------|------|--------|
+| bundle/ | 5.7MB | **63个** |
+| resources/ | 296KB | **44个** |
+| internal/ | 32KB | 2个 |
+| main/ | 24KB | 2个 |
+| **总计** | **6.1MB** | **111个** |
+
+**核心发现**：29 个源文件 → 111 个构建产物
+- Cocos 构建时为每个资源生成配置 JSON
+- 加上 manifest、index.js 等索引文件
+- 最终产生 111 个 HTTP 请求
+
+#### 3. 429 根本原因确认
+```
+111 个文件 vs 微信 10 并发限制 = 必然 429
+
+即使 WXNetworkGate 限制并发为 3：
+- 最少需要 111/3 = 37 轮请求
+- 加上 Cocos 内部可能绕过拦截
+- 服务器（Cloudflare）额外限流
+- 429 几乎不可避免
+```
+
+### 💡 解决方案探讨
+
+#### 方案对比
+| 方案 | 核心思路 | 优势 | 劣势 |
+|------|----------|------|------|
+| **A. ZIP 预下载** | 打包成 ZIP，1 次下载后本地解压 | 请求数减少 99%，根治 429 | 需实现解压逻辑 |
+| **B. 微信分包** | 使用微信原生分包机制 | 官方支持，无 429 | 更新需提审 |
+| **C. 激进延迟加载** | 进一步减少启动资源 | 改动小 | 治标不治本 |
+
+#### 最终选择：方案 A（ZIP 预下载）
+原因：
+1. 可最大程度减少 Cocos 代码修改
+2. 保留远程热更新能力
+3. 111 次请求 → 1 次请求，彻底根治
+4. 微信原生支持 `wx.getFileSystemManager().unzip()`
+
+### 📋 方案设计要点
+
+#### 核心流程
+```
+1. 启动时检查本地缓存
+   ├── 有缓存 → 直接 assetManager.loadBundle(本地路径)
+   └── 无缓存 → 执行 ZIP 预下载
+
+2. ZIP 预下载流程
+   ├── wx.downloadFile(remote.zip) [1 次请求]
+   ├── wx.getFileSystemManager().unzip() [本地解压]
+   └── assetManager.loadBundle(本地路径) [无网络请求]
+```
+
+#### 技术关键点
+1. **Cocos 支持本地路径加载 Bundle**：
+   ```javascript
+   assetManager.loadBundle(wx.env.USER_DATA_PATH + '/path/bundle', callback)
+   ```
+2. **微信原生 ZIP 解压**：`wx.getFileSystemManager().unzip()`
+3. **缓存目录**：`wx.env.USER_DATA_PATH`（200MB 限制，持久化）
+
+#### 效果预期
+| 指标 | 修改前 | 修改后 |
+|------|--------|--------|
+| HTTP 请求数 | 111 次 | **1 次** |
+| 429 错误 | 频繁 | **彻底消除** |
+| 首次加载时间 | 30-60秒 | **5-10秒** |
+
+### 📁 方案文档
+完整技术方案已保存至：
+- **`docs/design/fix/022-ZIP预下载方案-彻底根治429问题.md`**
+
+包含：
+- 详细实现代码（ZipPreloader.ts）
+- 构建脚本（build-zip.js）
+- PreloadManager 集成修改
+- 实施步骤（约 2 小时）
+- 回退方案
+- 风险评估
+
+### 📌 后续实施步骤
+
+1. **阶段一（30分钟）**：创建 `tools/build-zip.js` 构建脚本
+2. **阶段二（1小时）**：实现 `ZipPreloader.ts` 核心逻辑
+3. **阶段三（30分钟）**：集成到 PreloadManager + 测试验证
+
+### 💡 经验总结
+1. **问题定位要深入**：源文件数量 ≠ 实际请求数量，需分析构建产物
+2. **从根本解决**：并发控制治标不治本，减少请求数才是关键
+3. **利用平台能力**：微信原生 ZIP 解压 + Cocos 本地路径加载 = 完美组合
+4. **保留回退方案**：ZIP 失败时自动回退到原有远程加载
+
+---
+
 ## 2025-12-04 - ⚙️ [UI] 游戏设置面板音效开关功能
 
 ### 🎵 新功能实现

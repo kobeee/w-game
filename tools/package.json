@@ -1,0 +1,11 @@
+{
+  "name": "w-game-tools",
+  "version": "1.0.0",
+  "description": "构建工具集合",
+  "scripts": {
+    "build-zip": "node build-zip.js"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1"
+  }
+}

@@ -1,6 +1,7 @@
 import { _decorator, assetManager, SpriteFrame, JsonAsset } from 'cc';
 import { GlossService } from '../data/GlossService';
 import { AssetLoader } from '../core/AssetLoader';
+import { ZipPreloader } from '../core/ZipPreloader';
 // 尽早导入 AbortController polyfill，确保微信小游戏兼容性
 import '../util/AbortControllerPolyfill';
 
@@ -75,9 +76,103 @@ export class PreloadManager {
     /**
      * 🚀 优化版：加载单个Bundle中的关键资源
      * 启动阶段仅加载必需资源，大幅缩短首次加载时间
+     * 
+     * 微信环境优先使用 ZIP 预下载方案（111次请求 → 1次请求）
      */
     public async preloadStartupBundles(): Promise<void> {
-        console.log('[PreloadManager] 🚀 开始启动阶段资源加载（单Bundle版）...');
+        console.log('[PreloadManager] 🚀 开始启动阶段资源加载...');
+        this.reportProgress(0, '正在初始化核心资源加载...');
+
+        // 微信环境：优先使用 ZIP 预下载
+        if (typeof wx !== 'undefined') {
+            console.log('[PreloadManager] 📱 检测到微信环境，尝试 ZIP 预下载方案');
+            const success = await this.preloadWithZip();
+            if (success) {
+                console.log('[PreloadManager] ✅ ZIP 预下载成功');
+                return;
+            }
+            console.log('[PreloadManager] ⚠️ ZIP 预下载失败，回退到远程加载');
+        }
+
+        // 浏览器环境或 ZIP 预下载失败：使用原有远程加载逻辑
+        await this.preloadWithRemote();
+    }
+
+    /**
+     * 📦 微信环境：ZIP 预下载 + 本地 Bundle 加载
+     * @returns 是否成功
+     */
+    private async preloadWithZip(): Promise<boolean> {
+        const zipPreloader = ZipPreloader.getInstance();
+
+        // 传递进度回调（ZIP 下载占 0 - 0.5 进度）
+        zipPreloader.setProgressCallback((progress, message) => {
+            this.reportProgress(progress * 0.5, message);
+        });
+
+        try {
+            // 1. 确保 ZIP 资源已下载并解压
+            const localCachePath = await zipPreloader.ensureResourcesReady();
+
+            if (!localCachePath) {
+                console.warn('[PreloadManager] ZIP 预加载返回空路径，回退到远程加载');
+                return false;
+            }
+
+            // 2. 从本地路径加载 Bundle
+            this.reportProgress(0.5, '正在加载本地资源...');
+
+            const bundlePath = `${localCachePath}/bundle`;
+            const bundle = await this.loadBundleFromPath(bundlePath, this.BUNDLE_NAME);
+            
+            if (!bundle) {
+                console.warn('[PreloadManager] 本地 Bundle 加载失败，回退到远程加载');
+                return false;
+            }
+
+            this.reportProgress(0.6, 'Bundle 加载完成');
+
+            // 3. 预热关键资源（分配 0.6 → 0.8 进度）
+            await this.preloadCriticalAssetsWithProgress(0.6, 0.8);
+
+            // 4. 加载词库（分配 0.8 → 0.95 进度）
+            await this.loadGlossDataWithProgress(0.8, 0.95, false);
+
+            this.reportProgress(0.95, '核心资源加载完成，准备进入游戏');
+            return true;
+
+        } catch (error) {
+            console.error('[PreloadManager] ZIP 预加载异常:', error);
+            return false;
+        }
+    }
+
+    /**
+     * 从本地路径加载 Bundle
+     */
+    private loadBundleFromPath(path: string, bundleName: string): Promise<assetManager.Bundle | null> {
+        return new Promise((resolve) => {
+            console.log(`[PreloadManager] 从本地路径加载 Bundle: ${path}`);
+
+            assetManager.loadBundle(path, (err: any, bundle: any) => {
+                if (err) {
+                    console.error(`[PreloadManager] Bundle 加载失败: ${bundleName}`, err);
+                    resolve(null);
+                    return;
+                }
+
+                console.log(`[PreloadManager] ✅ Bundle 加载成功: ${bundleName}`);
+                this.loadedBundles.set(bundleName, bundle);
+                resolve(bundle);
+            });
+        });
+    }
+
+    /**
+     * 🌐 浏览器环境/回退：使用原有远程加载逻辑
+     */
+    private async preloadWithRemote(): Promise<void> {
+        console.log('[PreloadManager] 🌐 使用远程加载方案...');
         this.reportProgress(0, '正在初始化核心资源加载...');
 
         // 检测微信小游戏网络状态
