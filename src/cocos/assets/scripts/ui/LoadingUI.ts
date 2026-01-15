@@ -87,23 +87,23 @@ export class LoadingUI extends Component {
 
         console.log('[LoadingUI] 开始加载流程...');
 
-        // 设置进度回调
+        // 设置进度回调（PreloadManager 负责 0% - 85%）
         this.preloadManager.setProgressCallback((progress: number, message: string) => {
-            console.log(`[LoadingUI] 进度: ${Math.round(progress * 100)}% - ${message}`);
-            this.updateProgress(progress, message);
+            // 映射到 0 - 0.85 范围
+            const mappedProgress = progress * 0.85;
+            console.log(`[LoadingUI] 进度: ${Math.round(mappedProgress * 100)}% - ${message}`);
+            this.updateProgress(mappedProgress, message);
         });
 
         try {
-            // 调用 PreloadManager 的启动加载
+            // 调用 PreloadManager 的启动加载（0% - 85%）
             await this.preloadManager.preloadStartupBundles();
 
-            console.log('[LoadingUI] 启动资源加载完成');
-            this.updateProgress(1.0, '加载完成！');
+            console.log('[LoadingUI] 启动资源加载完成，开始预加载场景...');
+            this.updateProgress(0.85, '正在准备游戏界面...');
 
-            // 延迟跳转，让用户看到 100%
-            await new Promise<void>(resolve => setTimeout(resolve, 500));
-
-            this.navigateToMainMenu();
+            // 预加载场景和资源（85% - 100%）
+            await this.navigateToMainMenu();
 
         } catch (error) {
             console.error('[LoadingUI] 加载流程失败:', error);
@@ -113,7 +113,7 @@ export class LoadingUI extends Component {
     }
 
     /**
-     * 跳转到主菜单
+     * 跳转到主菜单（带进度报告）
      */
     private async navigateToMainMenu(): Promise<void> {
         if (this.hasNavigated) return;
@@ -123,28 +123,33 @@ export class LoadingUI extends Component {
         // ✅ 先预加载场景及MainMenu需要的Bundle资源
         return new Promise<void>((resolve, reject) => {
             console.log('[LoadingUI] 开始预加载 MainMenu 场景及资源...');
+            this.updateProgress(0.88, '正在预加载游戏场景...');
 
             // 第一步：预加载场景（容错处理：429失败也继续）
             director.preloadScene('MainMenu', (error) => {
                 if (error) {
                     console.warn('[LoadingUI] ⚠️ MainMenu场景预加载失败（可能是429），但继续尝试切换:', error);
-                    // 🔥 不reject，继续尝试直接切换场景
-                    this.directLoadScene();
+                    this.updateProgress(1.0, '加载完成！');
+                    // 延迟让用户看到 100%
+                    setTimeout(() => this.directLoadScene(), 300);
                     return;
                 }
 
                 console.log('[LoadingUI] ✅ MainMenu场景预加载完成，开始预加载Bundle资源...');
+                this.updateProgress(0.92, '正在准备界面资源...');
 
                 // 第二步：预加载MainMenu会动态加载的Bundle资源
                 this.preloadMainMenuBundleResources().then(() => {
                     console.log('[LoadingUI] ✅ MainMenu Bundle资源预加载完成，开始切换');
+                    this.updateProgress(1.0, '加载完成！');
 
-                    // 所有资源预加载完成后再切换场景
-                    this.directLoadScene();
+                    // 延迟让用户看到 100%，然后切换场景
+                    setTimeout(() => this.directLoadScene(), 300);
                 }).catch((bundleError) => {
                     console.warn('[LoadingUI] ⚠️ Bundle资源预加载失败，但继续尝试切换:', bundleError);
-                    // Bundle预加载失败也尝试切换场景
-                    this.directLoadScene();
+                    this.updateProgress(1.0, '加载完成！');
+                    // 延迟让用户看到 100%
+                    setTimeout(() => this.directLoadScene(), 300);
                 });
             });
         });

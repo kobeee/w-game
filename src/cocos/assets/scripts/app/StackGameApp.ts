@@ -938,12 +938,20 @@ export class StackGameApp extends Component {
             // 清空旧项
             content.removeAllChildren();
             
-            // 动态生成简易行（Word Definition Score）
-            let yOffset = 0;
-            const lineHeight = 30; // 每行高度
-            const lineSpacing = 5; // 行间距
+            // 🔧 确保 content 锚点在左上角，这对 ScrollView 滚动计算很重要
+            if (contentTransform) {
+                contentTransform.setAnchorPoint(0.5, 1);  // 锚点设在顶部中心
+            }
             
-            for (const ws of result.wordsCleared) {
+            // 动态生成简易行（Word Definition Score）
+            const lineHeight = 30; // 每行高度
+            const lineSpacing = 8; // 行间距
+            const wordCount = result.wordsCleared.length;
+            
+            console.log(`[StackGameApp] 生成单词列表，共 ${wordCount} 个单词`);
+            
+            for (let i = 0; i < wordCount; i++) {
+                const ws = result.wordsCleared[i];
                 const row = new Node('Row');
                 const wordLabel = row.addComponent(Label);
                 
@@ -956,18 +964,22 @@ export class StackGameApp extends Component {
                 wordLabel.string = `${ws.word.toUpperCase()}  ${ws.definition || '（无释义）'}  +${ws.scoreDelta}`;
                 wordLabel.fontSize = 22;
                 
-                // 设置行高度和位置
+                // 设置行高度
                 rowTransform.setContentSize(600, lineHeight);
-                row.setPosition(0, -yOffset, 0);
+                rowTransform.setAnchorPoint(0.5, 1);  // 行锚点也设在顶部
+                
+                // 设置位置：从顶部开始向下排列
+                const yPos = -(i * (lineHeight + lineSpacing) + lineSpacing);  // 顶部留出间距
+                row.setPosition(0, yPos, 0);
                 
                 content.addChild(row);
-                yOffset += lineHeight + lineSpacing;
             }
             
-            // 设置content总高度
+            // 设置content总高度（确保能滚动到所有内容）
             if (contentTransform) {
-                const totalHeight = Math.max(yOffset, 100); // 最小高度100px
+                const totalHeight = wordCount * (lineHeight + lineSpacing) + lineSpacing * 2;  // 上下各留间距
                 contentTransform.setContentSize(contentTransform.width, totalHeight);
+                console.log(`[StackGameApp] 设置 content 高度: ${totalHeight}px (${wordCount} 个单词)`);
             }
             
             // 修复滑动回弹问题：禁用弹性效果

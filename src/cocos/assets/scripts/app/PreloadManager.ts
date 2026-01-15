@@ -651,15 +651,15 @@ export class PreloadManager {
                     
                     // 🔥 瓦片资源增加额外间隔，避免429
                     if (assetPath.includes('tiles/tile_')) {
-                        console.log('[PreloadManager] 🧊 瓦片资源加载完成，冷却0.5秒...');
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        console.log('[PreloadManager] 🧊 瓦片资源加载完成，冷却0.01秒...');
+                        await new Promise(resolve => setTimeout(resolve, 10));
                     }
                 } catch (error) {
                     console.warn(`[PreloadManager] 资源预热失败: ${assetPath}`, error);
                     // 🔥 瓦片资源失败时增加额外等待时间
                     if (assetPath.includes('tiles/tile_')) {
-                        console.log('[PreloadManager] 🧊 瓦片资源失败，额外等待2秒...');
-                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        console.log('[PreloadManager] 🧊 瓦片资源失败，额外等待1秒...');
+                        await new Promise(resolve => setTimeout(resolve, 500));
                     }
                 }
             }

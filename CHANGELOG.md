@@ -1,5 +1,44 @@
 # CHANGELOG（近期关键变更）
 
+## 2025-01-16 - 🎨 [UX] 场景切换体验优化 & ScrollView 滚动修复
+
+### 🎯 优化内容
+
+#### 1. Main 场景点击"开始游戏"反馈优化
+- **问题**：点击开始游戏后无反馈，用户感觉迟钝
+- **原因**：`director.preloadScene()` 是异步操作，期间无视觉反馈
+- **修复**：
+  - 点击后立即禁用按钮，防止重复点击
+  - 显示自定义 Loading Overlay（半透明遮罩 + 白色圆角卡片 + 点点动画）
+  - 使用 `Graphics` 组件动态绘制 UI，无需额外资源
+  - 设置最小显示时间 500ms，确保用户能看到加载状态
+
+#### 2. Loading 进度条准确性修复
+- **问题**：进度到 100% 后仍需等待一段时间
+- **原因**：场景预加载操作未计入进度
+- **修复**：
+  - PreloadManager 进度映射到 0% - 85%
+  - 场景预加载映射到 85% - 92%
+  - Bundle 资源预加载映射到 92% - 100%
+  - 100% 后延迟 300ms 即切换场景
+
+#### 3. 叠叠乐结果页 ScrollView 滚动修复
+- **问题**：消除 13 个单词，但只能滚动看到 8 个
+- **原因**：content 锚点设置不正确，高度计算有误
+- **修复**：
+  - 确保 content 锚点设置为顶部中心 `(0.5, 1)`
+  - 修正行位置计算和间距
+  - 添加上下边距
+
+### 📁 修改文件
+
+- `src/cocos/assets/scripts/app/MainMenu.ts` - 添加自定义 Loading UI
+- `src/cocos/assets/scripts/ui/LoadingUI.ts` - 修复进度映射
+- `src/cocos/assets/scripts/app/StackGameApp.ts` - 修复结果页 ScrollView
+- `src/cocos/assets/scripts/app/ResultPage.ts` - 修复生词本 ScrollView
+
+---
+
 ## 2025-01-15 - 🚀 [CRITICAL] ZIP 预下载方案实施 - 彻底根治微信小游戏 429 问题
 
 ### 🎯 核心目标

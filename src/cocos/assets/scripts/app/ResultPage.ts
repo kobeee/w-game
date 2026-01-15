@@ -232,8 +232,9 @@ export class ResultPage extends Component {
             // WordItem预制体高度为80px，添加10px间距
             const itemHeight = 80;
             const spacing = 10;
-            const currentIndex = this.notebookContent.children.length - 1;
-            const yPos = -(currentIndex * (itemHeight + spacing));
+            // 🔧 修复：使用当前 children 数量作为索引（addChild 之前）
+            const currentIndex = this.notebookContent.children.length;
+            const yPos = -(currentIndex * (itemHeight + spacing) + spacing);  // 顶部留出间距
             itemNode.setPosition(0, yPos, 0);
         }
 
@@ -250,6 +251,9 @@ export class ResultPage extends Component {
         const contentTransform = this.notebookContent.getComponent(UITransform);
         if (!contentTransform) return;
 
+        // 🔧 确保 content 锚点在顶部中心，这对 ScrollView 滚动计算很重要
+        contentTransform.setAnchorPoint(0.5, 1);
+
         if (itemCount === 0) {
             // 空状态高度为100px
             contentTransform.setContentSize(contentTransform.width, 100);
@@ -257,8 +261,9 @@ export class ResultPage extends Component {
             // 每个项目高度80px + 10px间距
             const itemHeight = 80;
             const spacing = 10;
-            const totalHeight = itemCount * (itemHeight + spacing) + spacing; // 顶部额外间距
+            const totalHeight = itemCount * (itemHeight + spacing) + spacing * 2; // 上下各留间距
             contentTransform.setContentSize(contentTransform.width, totalHeight);
+            console.log(`[ResultPage] 设置 content 高度: ${totalHeight}px (${itemCount} 个单词)`);
         }
 
         // 重置ScrollView位置到顶部

@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Button, Toggle, ToggleContainer, director, sys, Sprite } from 'cc';
+import { _decorator, Component, Node, Button, Toggle, ToggleContainer, director, sys, Sprite, Label, Color, UITransform, tween, Vec3, UIOpacity, view, Widget, BlockInputEvents, Graphics, find } from 'cc';
 import { AssetLoader } from '../core/AssetLoader';
 import { TimezoneSync } from '../services/TimezoneSync';
 import { GameMode, GAME_MODE_CONFIGS, DEFAULT_GAME_MODE, GAME_MODE_STORAGE_KEY } from '../data/GameMode';
@@ -7,6 +7,10 @@ import { AudioMgr } from '../util/AudioMgr';
 // 尽早导入 AbortController polyfill，确保微信小游戏兼容性
 import '../util/AbortControllerPolyfill';
 // 使用统一AssetLoader，完全利用Cocos Creator 3.8.7缓存机制
+
+// 微信小游戏类型声明
+declare const wx: any;
+declare const gc: () => void;
 
 const { ccclass, property } = _decorator;
 
@@ -46,6 +50,9 @@ export class MainMenu extends Component {
     private selectedGameMode: GameMode = DEFAULT_GAME_MODE;
     private isSyncingGameMode = false;
     private audioMgr: AudioMgr = AudioMgr.getInstance();
+    private loadingOverlay: Node = null;  // 自定义 loading overlay
+    private loadingDots: string = '';     // loading 动画点点
+    private loadingTimer: number = null;  // loading 动画定时器
 
     protected async onLoad(): Promise<void> {
         // 🔍 监控微信小游戏内存状态
@@ -335,23 +342,195 @@ export class MainMenu extends Component {
 
         console.log(`[MainMenu] 开始预加载游戏场景: ${sceneName}`);
 
+        // 🎯 立即禁用按钮，防止重复点击
+        if (this.startButton) {
+            this.startButton.interactable = false;
+        }
+
+        // 🎯 显示加载状态，给用户即时反馈
+        this.showLoadingFeedback('正在进入游戏');
+        
+        // 记录开始时间，确保 loading 至少显示 500ms
+        const startTime = Date.now();
+        const MIN_LOADING_TIME = 500;  // 最小显示时间（毫秒）
+
         // ✅ 先预加载游戏场景（Game有16个资源，StackGameScene有29个资源）
         director.preloadScene(sceneName, (error) => {
             if (error) {
                 console.error(`[MainMenu] 场景预加载失败: ${sceneName}`, error);
+                // 恢复按钮状态
+                this.hideLoadingFeedback();
+                if (this.startButton) {
+                    this.startButton.interactable = true;
+                }
                 return;
             }
 
             console.log(`[MainMenu] ✅ ${sceneName}场景预加载完成，开始切换`);
+            
+            // 计算已经过去的时间，确保 loading 至少显示一段时间
+            const elapsed = Date.now() - startTime;
+            const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsed);
+            
+            // 延迟切换场景，让用户能看到 loading
+            setTimeout(() => {
+                director.loadScene(sceneName, (err: any) => {
+                    // 无论成功失败都隐藏加载提示（场景切换后会销毁）
+                    this.hideLoadingFeedback();
 
-            director.loadScene(sceneName, (err: any) => {
-                if (err) {
-                    console.error(`[MainMenu] 跳转场景失败: ${sceneName}`, err);
-                } else {
-                    console.log(`[MainMenu] ✅ 成功进入${sceneName}`);
-                }
-            });
+                    if (err) {
+                        console.error(`[MainMenu] 跳转场景失败: ${sceneName}`, err);
+                        // 恢复按钮状态
+                        if (this.startButton) {
+                            this.startButton.interactable = true;
+                        }
+                    } else {
+                        console.log(`[MainMenu] ✅ 成功进入${sceneName}`);
+                    }
+                });
+            }, remainingTime);
         });
+    }
+
+    /**
+     * 显示加载中反馈（使用自定义美观 UI）
+     */
+    private showLoadingFeedback(message: string): void {
+        console.log(`[MainMenu] 🔄 ${message}`);
+        
+        // 如果已存在，先销毁
+        if (this.loadingOverlay && this.loadingOverlay.isValid) {
+            this.loadingOverlay.destroy();
+        }
+        
+        // 创建 loading overlay
+        this.loadingOverlay = this.createLoadingOverlay(message);
+        
+        // 找到 Canvas 节点并添加到最顶层
+        const canvas = find('Canvas');
+        if (canvas) {
+            this.loadingOverlay.setParent(canvas);
+            // 确保在最顶层显示
+            this.loadingOverlay.setSiblingIndex(canvas.children.length - 1);
+            console.log(`[MainMenu] Loading overlay 已添加到 Canvas，siblingIndex: ${this.loadingOverlay.getSiblingIndex()}`);
+        } else {
+            console.error('[MainMenu] Canvas 节点未找到！');
+            // 备用方案：添加到当前节点的父节点
+            const parent = this.node.parent;
+            if (parent) {
+                this.loadingOverlay.setParent(parent);
+                this.loadingOverlay.setSiblingIndex(parent.children.length - 1);
+            }
+        }
+        
+        // 淡入动画
+        const opacity = this.loadingOverlay.getComponent(UIOpacity);
+        if (opacity) {
+            opacity.opacity = 0;
+            tween(opacity)
+                .to(0.2, { opacity: 255 })
+                .start();
+        }
+    }
+
+    /**
+     * 隐藏加载中反馈
+     */
+    private hideLoadingFeedback(): void {
+        // 清除动画定时器
+        if (this.loadingTimer !== null) {
+            clearInterval(this.loadingTimer);
+            this.loadingTimer = null;
+        }
+        
+        if (this.loadingOverlay && this.loadingOverlay.isValid) {
+            const opacity = this.loadingOverlay.getComponent(UIOpacity);
+            if (opacity) {
+                // 淡出动画
+                tween(opacity)
+                    .to(0.15, { opacity: 0 })
+                    .call(() => {
+                        if (this.loadingOverlay && this.loadingOverlay.isValid) {
+                            this.loadingOverlay.destroy();
+                            this.loadingOverlay = null;
+                        }
+                    })
+                    .start();
+            } else {
+                this.loadingOverlay.destroy();
+                this.loadingOverlay = null;
+            }
+        }
+    }
+
+    /**
+     * 创建自定义 loading overlay UI
+     */
+    private createLoadingOverlay(message: string): Node {
+        const screenSize = view.getVisibleSize();
+        
+        // 1. 创建根节点（全屏遮罩）
+        const overlay = new Node('LoadingOverlay');
+        const overlayTransform = overlay.addComponent(UITransform);
+        overlayTransform.setContentSize(screenSize.width, screenSize.height);
+        overlay.addComponent(UIOpacity);
+        overlay.addComponent(BlockInputEvents);  // 阻止点击穿透
+        
+        // 2. 创建半透明黑色背景（使用 Graphics 绘制）
+        const bgNode = new Node('Background');
+        bgNode.parent = overlay;
+        const bgTransform = bgNode.addComponent(UITransform);
+        bgTransform.setContentSize(screenSize.width, screenSize.height);
+        const bgGraphics = bgNode.addComponent(Graphics);
+        bgGraphics.fillColor = new Color(0, 0, 0, 150);  // 半透明黑色
+        bgGraphics.rect(-screenSize.width / 2, -screenSize.height / 2, screenSize.width, screenSize.height);
+        bgGraphics.fill();
+        
+        // 3. 创建居中的卡片容器（使用 Graphics 绘制圆角矩形）
+        const cardWidth = 280;
+        const cardHeight = 120;
+        const cardRadius = 16;  // 圆角半径
+        
+        const cardNode = new Node('Card');
+        cardNode.parent = overlay;
+        const cardTransform = cardNode.addComponent(UITransform);
+        cardTransform.setContentSize(cardWidth, cardHeight);
+        const cardGraphics = cardNode.addComponent(Graphics);
+        cardGraphics.fillColor = new Color(255, 255, 255, 245);  // 白色卡片
+        cardGraphics.roundRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, cardRadius);
+        cardGraphics.fill();
+        
+        // 4. 创建 loading 文字
+        const labelNode = new Node('Label');
+        labelNode.parent = cardNode;
+        labelNode.setPosition(0, 0, 0);
+        const labelTransform = labelNode.addComponent(UITransform);
+        labelTransform.setContentSize(260, 100);
+        const label = labelNode.addComponent(Label);
+        label.string = message;
+        label.fontSize = 28;
+        label.lineHeight = 36;
+        label.color = new Color(80, 80, 80, 255);  // 深灰色文字
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        
+        // 5. 启动点点动画
+        this.loadingDots = '';
+        const baseMessage = message.replace(/\.+$/, '');  // 去掉末尾的点
+        this.loadingTimer = setInterval(() => {
+            this.loadingDots = this.loadingDots.length >= 3 ? '' : this.loadingDots + '.';
+            if (label && label.isValid) {
+                label.string = baseMessage + this.loadingDots;
+            }
+        }, 400) as unknown as number;
+        
+        // 6. 卡片弹出动画
+        cardNode.setScale(0.8, 0.8, 1);
+        tween(cardNode)
+            .to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+            .start();
+        
+        return overlay;
     }
 
     private onToggleChanged(toggle: Toggle): void {
@@ -421,16 +600,22 @@ export class MainMenu extends Component {
     viewHistory(): void {
         console.log('[MainMenu] 开始预加载结果页面...');
 
+        // 🎯 显示加载状态
+        this.showLoadingFeedback('正在加载...');
+
         // ✅ 先预加载结果页（Result有24个资源）
         director.preloadScene('Result', (error) => {
             if (error) {
                 console.error('[MainMenu] 结果页预加载失败:', error);
+                this.hideLoadingFeedback();
                 return;
             }
 
             console.log('[MainMenu] ✅ 结果页预加载完成，开始切换');
 
             director.loadScene('Result', (err: any) => {
+                this.hideLoadingFeedback();
+                
                 if (err) {
                     console.error('[MainMenu] 跳转历史页面失败:', err);
                 } else {
@@ -460,23 +645,33 @@ export class MainMenu extends Component {
     }
 
     protected onDestroy(): void {
+        // 清理 loading 相关资源
+        if (this.loadingTimer !== null) {
+            clearInterval(this.loadingTimer);
+            this.loadingTimer = null;
+        }
+        if (this.loadingOverlay && this.loadingOverlay.isValid) {
+            this.loadingOverlay.destroy();
+            this.loadingOverlay = null;
+        }
+        
         // 清理事件监听
         if (this.startButton && this.startButton.node) {
             this.startButton.node.off(Button.EventType.CLICK, this.onStartGame, this);
         }
-        
+
         if (this.basicModeToggle && this.basicModeToggle.node) {
             this.basicModeToggle.node.off('toggle', this.onGameModeChanged, this);
         }
-        
+
         if (this.stackModeToggle && this.stackModeToggle.node) {
             this.stackModeToggle.node.off('toggle', this.onGameModeChanged, this);
         }
-        
+
         if (this.useFullToggle && this.useFullToggle.node) {
             this.useFullToggle.node.off('toggle', this.onToggleChanged, this);
         }
-        
+
         if (this.soundToggle && this.soundToggle.node) {
             this.soundToggle.node.off('toggle', this.onSoundToggleChanged, this);
         }
