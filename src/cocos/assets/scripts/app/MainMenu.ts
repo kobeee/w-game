@@ -4,6 +4,7 @@ import { TimezoneSync } from '../services/TimezoneSync';
 import { GameMode, GAME_MODE_CONFIGS, DEFAULT_GAME_MODE, GAME_MODE_STORAGE_KEY } from '../data/GameMode';
 import { PreloadManager } from './PreloadManager';
 import { AudioMgr } from '../util/AudioMgr';
+import { ShareManager } from '../util/ShareManager';
 // 尽早导入 AbortController polyfill，确保微信小游戏兼容性
 import '../util/AbortControllerPolyfill';
 // 使用统一AssetLoader，完全利用Cocos Creator 3.8.7缓存机制
@@ -57,7 +58,10 @@ export class MainMenu extends Component {
     protected async onLoad(): Promise<void> {
         // 🔍 监控微信小游戏内存状态
         this.setupMemoryMonitoring();
-        
+
+        // 🎯 初始化微信分享功能
+        ShareManager.getInstance().init();
+
         this.setupButtons();
         this.loadSettings();
         
